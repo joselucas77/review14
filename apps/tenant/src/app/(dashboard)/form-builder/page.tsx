@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getClientStoreUrl } from "@/lib/urls";
 
 interface CustomFieldItem {
   id: string;
@@ -274,7 +275,7 @@ export default function FormBuilderPage() {
         {/* Link para Testar no Cliente */}
         {company?.slug && (
           <Link
-            href={`http://localhost:3000/${company.slug}`}
+            href={getClientStoreUrl(company.slug)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/40 px-3.5 py-2 text-[13px] font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors shadow-xs"

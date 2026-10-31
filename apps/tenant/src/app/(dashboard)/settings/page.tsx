@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@ui/components/button";
 import { Input } from "@ui/components/input";
 import { createClient } from "@/lib/supabase/client";
+import { getClientBaseUrl, getClientStoreUrl } from "@/lib/urls";
 
 interface CompanyRecord {
   id: string;
@@ -334,11 +335,8 @@ export default function TenantSettingsPage() {
     }
   };
 
-  const clientOrigin =
-    typeof window !== "undefined"
-      ? window.location.origin.replace(":3002", ":3000")
-      : "http://localhost:3000";
-  const publicStoreUrl = slug ? `${clientOrigin}/${slug}` : `${clientOrigin}/...`;
+  const clientOrigin = getClientBaseUrl();
+  const publicStoreUrl = getClientStoreUrl(slug);
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-6 md:p-8 select-none transition-colors duration-200 pb-12">

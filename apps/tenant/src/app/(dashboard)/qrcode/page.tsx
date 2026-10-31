@@ -3,6 +3,7 @@
 import * as React from "react";
 import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
+import { getClientBaseUrl, getClientStoreUrl } from "@/lib/urls";
 
 interface ActiveQrPoint {
   id: string;
@@ -17,8 +18,31 @@ interface ActiveQrPoint {
 }
 
 export default function QrCodeAndLinksPage() {
-  const [companyName, setCompanyName] = React.useState("Meu Estabelecimento");
-  const [companySlug, setCompanySlug] = React.useState("minha-loja");
+  const [companyName, setCompanyName] = React.useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("review14_current_company");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.tradeName) return parsed.tradeName;
+        }
+      } catch {}
+    }
+    return "Meu Estabelecimento";
+  });
+
+  const [companySlug, setCompanySlug] = React.useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("review14_current_company");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.slug) return parsed.slug;
+        }
+      } catch {}
+    }
+    return "";
+  });
 
   const [selectedType, setSelectedType] = React.useState<"balcao" | "mesa" | "conta" | "delivery">("mesa");
   const [tableNumber, setTableNumber] = React.useState("14");
@@ -39,11 +63,16 @@ export default function QrCodeAndLinksPage() {
             .from("Company")
             .select("tradeName, slug")
             .eq("ownerId", user.id)
+            .order("createdAt", { ascending: false })
+            .limit(1)
             .maybeSingle();
 
           if (comp && comp.slug) {
             setCompanyName(comp.tradeName || "Meu Estabelecimento");
             setCompanySlug(comp.slug);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("review14_current_company", JSON.stringify(comp));
+            }
             return;
           }
         }
@@ -74,10 +103,8 @@ export default function QrCodeAndLinksPage() {
     };
   }, []);
 
-  const clientOrigin = typeof window !== "undefined"
-    ? window.location.origin.replace(":3002", ":3000")
-    : "http://localhost:3000";
-  const baseUrl = `${clientOrigin}/${companySlug}`;
+  const clientOrigin = getClientBaseUrl();
+  const baseUrl = companySlug ? `${clientOrigin}/${companySlug}` : clientOrigin;
 
   // Build target URL dynamically
   const currentUrl = React.useMemo(() => {

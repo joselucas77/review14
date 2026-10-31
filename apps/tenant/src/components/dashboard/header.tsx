@@ -3,6 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useTheme } from "@/components/theme-provider";
+import { getClientStoreUrl } from "@/lib/urls";
+import { createClient } from "@/lib/supabase/client";
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -19,41 +21,74 @@ export function Header({
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const [publicUrl, setPublicUrl] = React.useState("http://localhost:3000");
+  const [publicUrl, setPublicUrl] = React.useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("review14_current_company");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.slug) return getClientStoreUrl(parsed.slug);
+        }
+      } catch {}
+    }
+    return getClientStoreUrl("");
+  });
   const isDark = theme === "dark";
 
   React.useEffect(() => {
     const updateUrl = (companySlug?: string) => {
       if (companySlug) {
-        const clientOrigin = window.location.origin.replace(":3002", ":3000");
-        setPublicUrl(`${clientOrigin}/${companySlug}`);
+        setPublicUrl(getClientStoreUrl(companySlug));
       }
     };
 
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("review14_current_company");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (parsed.slug) {
-            updateUrl(parsed.slug);
-          }
-        } catch (e) {
-          // ignore
+    async function checkCompany() {
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("review14_current_company");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed.slug) {
+              updateUrl(parsed.slug);
+              return;
+            }
+          } catch {}
         }
       }
 
-      const handleCompanyUpdated = (e: any) => {
-        if (e.detail?.slug) {
-          updateUrl(e.detail.slug);
-        }
-      };
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: comp } = await supabase
+            .from("Company")
+            .select("slug")
+            .eq("ownerId", user.id)
+            .order("createdAt", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-      window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
-      return () => {
-        window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
-      };
+          if (comp?.slug) {
+            updateUrl(comp.slug);
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
     }
+
+    checkCompany();
+
+    const handleCompanyUpdated = (e: any) => {
+      if (e.detail?.slug) {
+        updateUrl(e.detail.slug);
+      }
+    };
+
+    window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    return () => {
+      window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    };
   }, []);
 
   return (
