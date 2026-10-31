@@ -29,12 +29,40 @@ export default function StoreAuthPage() {
   const [loading, setLoading] = React.useState(true);
   const [storeNotFound, setStoreNotFound] = React.useState(false);
 
-  // Fetch real store from Supabase
+  // Fetch real store from Supabase & check existing auth
   React.useEffect(() => {
-    async function loadStore() {
+    async function init() {
       try {
         setLoading(true);
         const supabase = createClient();
+
+        // 1. Check if user is already authenticated
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem(
+              "review_auth",
+              JSON.stringify({
+                isAnonymous: false,
+                name:
+                  user.user_metadata?.full_name ||
+                  user.user_metadata?.name ||
+                  user.email?.split("@")[0] ||
+                  "Cliente Verificado",
+                email: user.email,
+                avatarUrl:
+                  user.user_metadata?.avatar_url ||
+                  user.user_metadata?.picture ||
+                  `https://api.dicebear.com/7.x/identicon/svg?seed=${user.email}`,
+                userId: user.id,
+              })
+            );
+          }
+          router.push(`/${slug}/evaluate`);
+          return;
+        }
+
+        // 2. Fetch Store
         const { data, error } = await supabase
           .from("Company")
           .select("id, slug, tradeName, category, logoUrl, planTier")
@@ -58,9 +86,9 @@ export default function StoreAuthPage() {
     }
 
     if (slug) {
-      loadStore();
+      init();
     }
-  }, [slug]);
+  }, [slug, router]);
 
   // Destination name: Real tradeName if available, else formatted slug
   const destinationName = React.useMemo(() => {
@@ -71,43 +99,114 @@ export default function StoreAuthPage() {
       .join(" ");
   }, [storeData?.tradeName, slug]);
 
-  const handleOAuth = (provider: "google" | "apple") => {
-    // Redireciona mantendo o slug no callback
-    router.push(`/api/auth/signin?callbackUrl=/${slug}/evaluate`);
-  };
+  const handleOAuth = async (provider: "google" | "apple") => {
+    if (provider === "google") {
+      try {
+        const supabase = createClient();
+        const origin = window.location.origin;
+        const redirectUrl = `${origin}/auth/callback?next=/${slug}/evaluate`;
 
-  const handleEmailSubmit = (data: { email: string; password: string }) => {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        "review_auth",
-        JSON.stringify({
-          isAnonymous: false,
-          email: data.email,
-          name: data.email.split("@")[0],
-          avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${data.email}`,
-        })
-      );
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: redirectUrl,
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          },
+        });
+
+        if (error) {
+          console.error("Erro no login Google:", error);
+          alert(error.message || "Erro ao conectar com Google.");
+        }
+      } catch (err: any) {
+        console.error("Erro no login Google:", err);
+        alert("Não foi possível conectar com o Google.");
+      }
+    } else {
+      alert("Autenticação com Apple em desenvolvimento.");
     }
-    router.push(`/${slug}/evaluate`);
   };
 
-  const handleRegisterSubmit = (data: {
+  const handleEmailSubmit = async (data: { email: string; password: string }) => {
+    try {
+      const supabase = createClient();
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: data.email.trim(),
+        password: data.password,
+      });
+
+      if (error) {
+        alert(error.message || "E-mail ou senha incorretos.");
+        return;
+      }
+
+      if (authData.user && typeof window !== "undefined") {
+        sessionStorage.setItem(
+          "review_auth",
+          JSON.stringify({
+            isAnonymous: false,
+            email: authData.user.email,
+            name:
+              authData.user.user_metadata?.full_name ||
+              authData.user.user_metadata?.name ||
+              authData.user.email?.split("@")[0],
+            avatarUrl:
+              authData.user.user_metadata?.avatar_url ||
+              `https://api.dicebear.com/7.x/identicon/svg?seed=${authData.user.email}`,
+            userId: authData.user.id,
+          })
+        );
+      }
+      router.push(`/${slug}/evaluate`);
+    } catch (err: any) {
+      console.error("Erro no login:", err);
+      alert("Ocorreu um erro ao fazer login.");
+    }
+  };
+
+  const handleRegisterSubmit = async (data: {
     name: string;
     email: string;
     password: string;
   }) => {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        "review_auth",
-        JSON.stringify({
-          isAnonymous: false,
-          name: data.name,
-          email: data.email,
-          avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${data.email}`,
-        })
-      );
+    try {
+      const supabase = createClient();
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: data.email.trim(),
+        password: data.password,
+        options: {
+          data: {
+            name: data.name.trim(),
+            role: "CUSTOMER",
+          },
+        },
+      });
+
+      if (error) {
+        alert(error.message || "Falha ao criar conta.");
+        return;
+      }
+
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(
+          "review_auth",
+          JSON.stringify({
+            isAnonymous: false,
+            name: data.name,
+            email: data.email,
+            avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${data.email}`,
+            userId: authData.user?.id,
+          })
+        );
+      }
+      router.push(`/${slug}/evaluate`);
+    } catch (err: any) {
+      console.error("Erro no cadastro:", err);
+      alert("Ocorreu um erro ao realizar cadastro.");
     }
-    router.push(`/${slug}/evaluate`);
   };
 
   const handleGuestContinue = () => {

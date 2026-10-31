@@ -2,6 +2,19 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const { searchParams, pathname } = request.nextUrl;
+  const code = searchParams.get("code");
+
+  // Se o Supabase redirecionar com ?code=... para uma rota diferente de /auth/callback,
+  // encaminha imediatamente para /auth/callback para trocar o código PKCE pela sessão
+  if (code && pathname !== "/auth/callback") {
+    const callbackUrl = new URL("/auth/callback", request.url);
+    callbackUrl.searchParams.set("code", code);
+    const next = searchParams.get("next");
+    if (next) callbackUrl.searchParams.set("next", next);
+    return NextResponse.redirect(callbackUrl);
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });

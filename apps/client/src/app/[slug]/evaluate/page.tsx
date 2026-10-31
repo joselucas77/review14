@@ -171,7 +171,7 @@ export default function EvaluatePage() {
       const supabase = createClient();
       const reviewId = crypto.randomUUID();
 
-      // Check stored auth
+      // Check stored auth or Supabase session
       let authUser: {
         isAnonymous?: boolean;
         name?: string;
@@ -183,15 +183,31 @@ export default function EvaluatePage() {
         name: "Cliente Verificado",
       };
 
-      if (typeof window !== "undefined") {
-        const storedAuth = sessionStorage.getItem("review_auth");
-        if (storedAuth) {
-          try {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          authUser = {
+            isAnonymous: false,
+            name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              user.email?.split("@")[0] ||
+              "Cliente Verificado",
+            email: user.email,
+            avatarUrl:
+              user.user_metadata?.avatar_url ||
+              user.user_metadata?.picture ||
+              null,
+            userId: user.id,
+          };
+        } else if (typeof window !== "undefined") {
+          const storedAuth = sessionStorage.getItem("review_auth");
+          if (storedAuth) {
             authUser = JSON.parse(storedAuth);
-          } catch {
-            // fallback default
           }
         }
+      } catch (authErr) {
+        console.warn("Could not retrieve user info:", authErr);
       }
 
       const minGoogleRating = company?.minRatingForGoogle ?? 4;
