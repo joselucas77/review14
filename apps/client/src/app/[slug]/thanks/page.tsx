@@ -11,6 +11,7 @@ interface ReviewResult {
   storeName?: string;
   isPromoter?: boolean;
   googlePlaceId?: string;
+  customRedirectUrl?: string;
 }
 
 export default function ThanksPage() {
@@ -20,10 +21,12 @@ export default function ThanksPage() {
 
   const [result, setResult] = React.useState<ReviewResult>({
     overallRating: 5,
-    comment: "O espresso duplo com grãos da Mantiqueira estava perfeito e o atendimento do Lucas foi sensacional!",
-    storeName: "Café Aurora",
+    comment: "",
+    storeName: "",
     isPromoter: true,
   });
+
+  const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
     if (typeof window !== "undefined") {
@@ -47,44 +50,91 @@ export default function ThanksPage() {
       .join(" ");
   }, [result.storeName, slug]);
 
-  const handleGoogleRedirect = () => {
-    const url = result.googlePlaceId
-      ? `https://search.google.com/local/writereview?placeid=${result.googlePlaceId}`
-      : "https://www.google.com/maps";
-    window.open(url, "_blank");
+  const handleGoogleRedirect = async () => {
+    // 1. Copy comment to clipboard if exists
+    if (result.comment && typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(result.comment);
+        setCopied(true);
+      } catch (e) {
+        console.warn("Could not copy comment to clipboard:", e);
+      }
+    }
+
+    // 2. Open Google review link
+    let url = "https://www.google.com/maps";
+    if (result.googlePlaceId) {
+      url = `https://search.google.com/local/writereview?placeid=${result.googlePlaceId}`;
+    } else if (result.customRedirectUrl) {
+      url = result.customRedirectUrl;
+    } else {
+      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storeDisplayName)}`;
+    }
+
+    setTimeout(() => {
+      window.open(url, "_blank");
+    }, 400);
   };
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-[#F8FAFC] text-[#0F172A] antialiased">
       <div className="mx-auto flex w-full max-w-[390px] flex-col items-center justify-center px-5 py-12">
-        {/* Cartão Principal de Agradecimento usando shadcn/ui Card */}
+        {/* Cartão Principal de Agradecimento */}
         <Card className="w-full border-[#E2E8F0] bg-white p-5 text-center shadow-[0_4px_6px_-1px_rgba(0,0,0,0.04)]">
           <CardContent className="flex flex-col items-center gap-5 p-0">
-            {/* Ícone de Sucesso Redondo */}
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-[#BBF7D0] bg-[#F0FDF4]">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#15803D"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="shrink-0"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
+            {/* Ícone Redondo */}
+            {result.isPromoter ? (
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-[#BBF7D0] bg-[#F0FDF4]">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#15803D"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="shrink-0"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            ) : (
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-[#BFDBFE] bg-[#EFF6FF]">
+                <svg
+                  width="30"
+                  height="30"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#2563EB"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+            )}
 
             {/* Textos de Agradecimento */}
             <div className="flex flex-col gap-2">
               <h1 className="text-[20px] font-bold leading-snug text-[#0F172A]">
-                Obrigado pela sua avaliação!
+                {result.isPromoter
+                  ? "Obrigado pela sua avaliação!"
+                  : "Recebemos o seu relato"}
               </h1>
               <p className="text-[13px] leading-relaxed text-[#475569]">
-                Sua opinião é importante e ajuda outras pessoas a conhecerem as experiências do{" "}
-                <span className="font-bold text-[#0F172A]">{storeDisplayName}</span>.
+                {result.isPromoter ? (
+                  <>
+                    Sua opinião é valiosa e ajuda novos clientes a conhecerem as experiências do{" "}
+                    <span className="font-bold text-[#0F172A]">{storeDisplayName}</span>.
+                  </>
+                ) : (
+                  <>
+                    Agradecemos por nos apontar onde podemos evoluir. Seu relato foi encaminhado confidencialmente à gerência do{" "}
+                    <span className="font-bold text-[#0F172A]">{storeDisplayName}</span>.
+                  </>
+                )}
               </p>
             </div>
 
@@ -119,19 +169,25 @@ export default function ThanksPage() {
               )}
             </div>
 
-            {/* Opcional: Convite Google para Clientes Satisfeitos (Promotores) */}
+            {/* Convite Google para Clientes Satisfeitos (Promotores) */}
             {result.isPromoter && (
-              <div className="flex w-full flex-col items-center gap-2 rounded-[12px] border border-[#DBEAFE] bg-[#EFF6FF] p-3 text-center">
-                <span className="text-[12px] font-semibold text-[#1D4ED8]">
-                  ⭐ Que tal compartilhar também no Google?
-                </span>
+              <div className="flex w-full flex-col items-center gap-2.5 rounded-[12px] border border-[#DBEAFE] bg-[#EFF6FF] p-3 text-center">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[12px] font-semibold text-[#1D4ED8]">
+                    ⭐ Compartilhe também no Google Maps!
+                  </span>
+                  <span className="text-[11px] text-[#3B82F6]">
+                    Seu comentário será copiado para colar no Google com 1 clique.
+                  </span>
+                </div>
+
                 <Button
                   type="button"
                   variant="outline"
                   size="default"
                   fullWidth
                   onClick={handleGoogleRedirect}
-                  className="gap-2 bg-white border-[#CBD5E1] text-[13px] font-semibold"
+                  className="gap-2 bg-white border-[#CBD5E1] text-[13px] font-semibold hover:bg-slate-50 transition"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24">
                     <path
@@ -151,8 +207,21 @@ export default function ThanksPage() {
                       fill="#EA4335"
                     />
                   </svg>
-                  Postar no Google Avaliações
+                  <span>{copied ? "Comentário copiado! Abrindo..." : "Postar no Google Avaliações"}</span>
                 </Button>
+              </div>
+            )}
+
+            {/* Card para Clientes com Críticas (Detratores / Ouvidoria Privada) */}
+            {!result.isPromoter && (
+              <div className="flex w-full flex-col gap-1.5 rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] p-3 text-left">
+                <span className="text-[12px] font-bold text-[#0F172A] flex items-center gap-1.5">
+                  <span className="flex h-2 w-2 rounded-full bg-[#2563EB]"></span>
+                  Canal Direto da Diretoria
+                </span>
+                <p className="text-[11px] text-[#64748B] leading-relaxed">
+                  Para garantir sua satisfação, nosso time de gestão avaliará seu feedback para adotar melhorias imediatas.
+                </p>
               </div>
             )}
 

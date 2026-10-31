@@ -15,6 +15,7 @@ interface LoginOptionsCardProps {
   onSelectApple?: () => void;
   onSelectEmail: () => void;
   onGoToRegister: () => void;
+  onContinueAsGuest?: () => void;
 }
 
 export function LoginOptionsCard({
@@ -22,6 +23,7 @@ export function LoginOptionsCard({
   onSelectApple,
   onSelectEmail,
   onGoToRegister,
+  onContinueAsGuest,
 }: LoginOptionsCardProps) {
   return (
     <Card className="w-full border-[#E2E8F0] bg-white p-2 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.04)] sm:p-4">
@@ -124,6 +126,20 @@ export function LoginOptionsCard({
           </svg>
           <span>Entrar com e-mail e senha</span>
         </Button>
+
+        {/* Guest Continue Option */}
+        {onContinueAsGuest && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            fullWidth
+            onClick={onContinueAsGuest}
+            className="text-[13px] font-semibold text-[#2563EB] hover:bg-blue-50 py-2.5"
+          >
+            Avaliar rapidamente sem cadastro →
+          </Button>
+        )}
 
         {/* Footer Link */}
         <div className="flex items-center justify-center gap-1 pt-2 text-center">

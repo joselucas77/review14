@@ -61,6 +61,17 @@ export default function QrCodeAndLinksPage() {
       }
     }
     loadCompany();
+
+    const handleCompanyUpdated = (e: any) => {
+      const comp = e.detail;
+      if (comp?.tradeName) setCompanyName(comp.tradeName);
+      if (comp?.slug) setCompanySlug(comp.slug);
+    };
+
+    window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    return () => {
+      window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    };
   }, []);
 
   const clientOrigin = typeof window !== "undefined"

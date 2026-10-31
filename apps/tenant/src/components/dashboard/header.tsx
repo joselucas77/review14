@@ -23,19 +23,36 @@ export function Header({
   const isDark = theme === "dark";
 
   React.useEffect(() => {
+    const updateUrl = (companySlug?: string) => {
+      if (companySlug) {
+        const clientOrigin = window.location.origin.replace(":3002", ":3000");
+        setPublicUrl(`${clientOrigin}/${companySlug}`);
+      }
+    };
+
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("review14_current_company");
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
           if (parsed.slug) {
-            const clientOrigin = window.location.origin.replace(":3002", ":3000");
-            setPublicUrl(`${clientOrigin}/${parsed.slug}`);
+            updateUrl(parsed.slug);
           }
         } catch (e) {
           // ignore
         }
       }
+
+      const handleCompanyUpdated = (e: any) => {
+        if (e.detail?.slug) {
+          updateUrl(e.detail.slug);
+        }
+      };
+
+      window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+      return () => {
+        window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+      };
     }
   }, []);
 

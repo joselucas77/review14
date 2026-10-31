@@ -77,6 +77,19 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
       }
     }
     loadUser();
+
+    const handleCompanyUpdated = (e: any) => {
+      const comp = e.detail;
+      if (comp?.tradeName) {
+        setCompanyName(comp.tradeName);
+        setCompanyCategory(comp.category || "Unidade Centro");
+        setCompanyInitials(comp.tradeName.slice(0, 2).toUpperCase());
+      }
+    };
+    window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    return () => {
+      window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    };
   }, []);
 
   const handleSignOut = async () => {

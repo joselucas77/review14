@@ -119,6 +119,17 @@ export default function FormBuilderPage() {
     }
 
     loadCompanyAndFields();
+
+    const handleCompanyUpdated = (e: any) => {
+      if (e.detail?.id) {
+        loadCompanyAndFields();
+      }
+    };
+
+    window.addEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    return () => {
+      window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
+    };
   }, []);
 
   const handleAddField = async (e: React.FormEvent) => {
