@@ -29,6 +29,7 @@ interface ReviewRecord {
   merchantReply?: string | null;
   repliedAt?: string | null;
   createdAt: string;
+  media?: { id: string; url: string; fileKey: string; type: string }[];
 }
 
 export default function StoreFeedPage() {
@@ -61,13 +62,34 @@ export default function StoreFeedPage() {
           // 2. Fetch Reviews for this company
           const { data: revData, error: revErr } = await supabase
             .from("Review")
-            .select("id, overallRating, comment, isAnonymous, anonymousName, anonymousAvatar, userId, merchantReply, repliedAt, createdAt")
+            .select(`
+              id,
+              overallRating,
+              comment,
+              isAnonymous,
+              anonymousName,
+              anonymousAvatar,
+              userId,
+              merchantReply,
+              repliedAt,
+              createdAt,
+              ReviewMedia (
+                id,
+                url,
+                fileKey,
+                type
+              )
+            `)
             .eq("companyId", compData.id)
             .eq("isPublic", true)
             .order("createdAt", { ascending: false });
 
           if (!revErr && revData) {
-            setReviews(revData);
+            const mapped: ReviewRecord[] = revData.map((r: any) => ({
+              ...r,
+              media: Array.isArray(r.ReviewMedia) ? r.ReviewMedia : [],
+            }));
+            setReviews(mapped);
           }
         }
       } catch (err) {
@@ -279,6 +301,27 @@ export default function StoreFeedPage() {
                     <p className="text-[12px] italic text-[#94A3B8]">
                       Avaliação sem comentário por escrito.
                     </p>
+                  )}
+
+                  {/* Fotos da Visita */}
+                  {item.media && item.media.length > 0 && (
+                    <div className="flex items-center gap-2 overflow-x-auto py-1">
+                      {item.media.map((m) => (
+                        <a
+                          key={m.id}
+                          href={m.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="relative block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 hover:opacity-90 transition"
+                        >
+                          <img
+                            src={m.url}
+                            alt="Foto da visita"
+                            className="h-full w-full object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
                   )}
 
                   {/* Resposta do Lojista */}

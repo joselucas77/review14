@@ -226,8 +226,6 @@ export default function StoreAuthPage() {
         JSON.stringify({
           isAnonymous: true,
           name: "Cliente Anônimo",
-          email: null,
-          avatarUrl: null,
         })
       );
     }
@@ -238,44 +236,68 @@ export default function StoreAuthPage() {
     <div className="flex min-h-screen w-full flex-col bg-[#F8FAFC] px-5 py-8 text-[#0F172A] antialiased">
       {/* Container Centralizado de 390px (Mobile Standard) */}
       <div className="mx-auto flex w-full max-w-[390px] flex-col items-center gap-6">
-        {mode === "options" && (
-          <>
-            {/* Header com Logo e Badge de Destino */}
-            <LogoBadge destination={destinationName} icon="star" />
+        {storeNotFound && !loading ? (
+          <div className="flex w-full flex-col items-center gap-4 text-center pt-8">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
 
-            {storeNotFound && !loading && (
-              <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-xs text-amber-800">
-                <p className="font-semibold">Estabelecimento não encontrado no sistema</p>
-                <p className="mt-1 text-amber-700">
-                  Você ainda pode visualizar e testar o fluxo de avaliação demonstrativo.
-                </p>
-              </div>
+            <div className="flex flex-col gap-1">
+              <h1 className="text-[20px] font-bold text-[#0F172A]">
+                Loja não encontrada
+              </h1>
+              <p className="text-[13px] text-[#64748B] leading-relaxed">
+                Não encontramos nenhum estabelecimento ativo com o identificador <span className="font-mono font-semibold text-[#0F172A]">/{slug}</span>.
+              </p>
+            </div>
+
+            <div className="w-full pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="w-full rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white p-3 text-xs font-semibold shadow-xs transition cursor-pointer"
+              >
+                Buscar ou Informar Outra Loja
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {mode === "options" && (
+              <>
+                {/* Header com Logo e Badge de Destino */}
+                <LogoBadge destination={destinationName} icon="star" />
+
+                {/* Cartão com Opções de Login */}
+                <LoginOptionsCard
+                  onSelectGoogle={() => handleOAuth("google")}
+                  onSelectApple={() => handleOAuth("apple")}
+                  onSelectEmail={() => setMode("email")}
+                  onGoToRegister={() => setMode("register")}
+                  onContinueAsGuest={handleGuestContinue}
+                />
+              </>
             )}
 
-            {/* Cartão com Opções de Login */}
-            <LoginOptionsCard
-              onSelectGoogle={() => handleOAuth("google")}
-              onSelectApple={() => handleOAuth("apple")}
-              onSelectEmail={() => setMode("email")}
-              onGoToRegister={() => setMode("register")}
-              onContinueAsGuest={handleGuestContinue}
-            />
+            {mode === "email" && (
+              <EmailLoginCard
+                onBackToOptions={() => setMode("options")}
+                onGoToRegister={() => setMode("register")}
+                onSubmit={handleEmailSubmit}
+              />
+            )}
+
+            {mode === "register" && (
+              <RegisterCard
+                onBackToLogin={() => setMode("options")}
+                onSubmit={handleRegisterSubmit}
+              />
+            )}
           </>
-        )}
-
-        {mode === "email" && (
-          <EmailLoginCard
-            onBackToOptions={() => setMode("options")}
-            onGoToRegister={() => setMode("register")}
-            onSubmit={handleEmailSubmit}
-          />
-        )}
-
-        {mode === "register" && (
-          <RegisterCard
-            onBackToLogin={() => setMode("options")}
-            onSubmit={handleRegisterSubmit}
-          />
         )}
       </div>
     </div>

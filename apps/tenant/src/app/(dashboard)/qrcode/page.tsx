@@ -8,13 +8,14 @@ import { getClientBaseUrl, getClientStoreUrl } from "@/lib/urls";
 interface ActiveQrPoint {
   id: string;
   name: string;
-  type: "balcao" | "mesa" | "conta" | "delivery";
+  type: "geral" | "balcao" | "mesa" | "conta" | "delivery";
   slug: string;
   url: string;
   totalScans: number;
   reviewsCount: number;
   conversionRate: string;
   status: "active" | "inactive";
+  isCustom?: boolean;
 }
 
 export default function QrCodeAndLinksPage() {
@@ -44,8 +45,10 @@ export default function QrCodeAndLinksPage() {
     return "";
   });
 
-  const [selectedType, setSelectedType] = React.useState<"balcao" | "mesa" | "conta" | "delivery">("mesa");
-  const [tableNumber, setTableNumber] = React.useState("14");
+  const [selectedType, setSelectedType] = React.useState<
+    "geral" | "balcao" | "mesa" | "conta" | "delivery"
+  >("geral");
+  const [tableNumber, setTableNumber] = React.useState("");
   const [attendantName, setAttendantName] = React.useState("");
   const [qrColor, setQrColor] = React.useState("#0F172A");
   const [qrDataUrl, setQrDataUrl] = React.useState<string>("");
@@ -106,11 +109,11 @@ export default function QrCodeAndLinksPage() {
   const clientOrigin = getClientBaseUrl();
   const baseUrl = companySlug ? `${clientOrigin}/${companySlug}` : clientOrigin;
 
-  // Build target URL dynamically
+  // Build target URL dynamically (pure baseUrl by default, params only if provided)
   const currentUrl = React.useMemo(() => {
     const params = new URLSearchParams();
-    if (selectedType === "mesa" && tableNumber) {
-      params.append("mesa", tableNumber);
+    if (selectedType === "mesa" && tableNumber.trim()) {
+      params.append("mesa", tableNumber.trim());
     }
     if (selectedType === "conta") {
       params.append("origem", "conta");
@@ -118,12 +121,15 @@ export default function QrCodeAndLinksPage() {
     if (selectedType === "delivery") {
       params.append("origem", "delivery");
     }
+    if (selectedType === "balcao" && attendantName.trim()) {
+      params.append("origem", "balcao");
+    }
     if (attendantName.trim()) {
       params.append("garcom", attendantName.trim());
     }
     const query = params.toString();
     return query ? `${baseUrl}?${query}` : baseUrl;
-  }, [selectedType, tableNumber, attendantName]);
+  }, [baseUrl, selectedType, tableNumber, attendantName]);
 
   // Generate QR Code data URL
   React.useEffect(() => {
@@ -139,52 +145,105 @@ export default function QrCodeAndLinksPage() {
       .catch((err) => console.error("Error generating QR code:", err));
   }, [currentUrl, qrColor]);
 
-  const activePoints: ActiveQrPoint[] = [
-    {
-      id: "pt_1",
-      name: "Display do Balcão Principal",
-      type: "balcao",
-      slug: "balcao-principal",
-      url: `${baseUrl}`,
-      totalScans: 842,
-      reviewsCount: 512,
-      conversionRate: "60.8%",
+  // Pontos de Coleta Padrão
+  const defaultPoints: ActiveQrPoint[] = React.useMemo(
+    () => [
+      {
+        id: "pt_default",
+        name: "Link Principal da Loja (Padrão)",
+        type: "geral",
+        slug: "link-principal",
+        url: baseUrl,
+        totalScans: 1240,
+        reviewsCount: 890,
+        conversionRate: "71.8%",
+        status: "active",
+      },
+      {
+        id: "pt_balcao",
+        name: "Display Balcão / Entrada",
+        type: "balcao",
+        slug: "balcao-entrada",
+        url: `${baseUrl}?origem=balcao`,
+        totalScans: 412,
+        reviewsCount: 265,
+        conversionRate: "64.3%",
+        status: "active",
+      },
+      {
+        id: "pt_delivery",
+        name: "Adesivo Delivery / Embalagem",
+        type: "delivery",
+        slug: "embalagem-delivery",
+        url: `${baseUrl}?origem=delivery`,
+        totalScans: 194,
+        reviewsCount: 136,
+        conversionRate: "70.1%",
+        status: "active",
+      },
+    ],
+    [baseUrl]
+  );
+
+  // Pontos de Coleta Salvos pelo Dono da Loja
+  const [customPoints, setCustomPoints] = React.useState<ActiveQrPoint[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("review14_saved_qr_points");
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return [];
+  });
+
+  const allPoints = React.useMemo(() => {
+    return [...customPoints, ...defaultPoints];
+  }, [customPoints, defaultPoints]);
+
+  const handleSaveCurrentPoint = () => {
+    let pointName = "Link Padrão da Loja";
+    if (selectedType === "mesa") {
+      pointName = tableNumber.trim()
+        ? `Mesa ${tableNumber.trim()}${attendantName.trim() ? ` (${attendantName.trim()})` : ""}`
+        : "Mesa do Salão";
+    } else if (selectedType === "balcao") {
+      pointName = attendantName.trim()
+        ? `Balcão (${attendantName.trim()})`
+        : "Balcão / Recepção";
+    } else if (selectedType === "conta") {
+      pointName = "Comanda / Fechamento de Conta";
+    } else if (selectedType === "delivery") {
+      pointName = "Delivery / Embalagem";
+    }
+
+    const newPt: ActiveQrPoint = {
+      id: `pt_${Date.now()}`,
+      name: pointName,
+      type: selectedType,
+      slug: `${selectedType}-${Date.now()}`,
+      url: currentUrl,
+      totalScans: 0,
+      reviewsCount: 0,
+      conversionRate: "0%",
       status: "active",
-    },
-    {
-      id: "pt_2",
-      name: "Salão Principal (Mesas 01 a 20)",
-      type: "mesa",
-      slug: "salao-mesas",
-      url: `${baseUrl}?mesa=14`,
-      totalScans: 620,
-      reviewsCount: 438,
-      conversionRate: "70.6%",
-      status: "active",
-    },
-    {
-      id: "pt_3",
-      name: "Comanda & Fechamento de Conta",
-      type: "conta",
-      slug: "comanda-fechamento",
-      url: `${baseUrl}?origem=conta`,
-      totalScans: 318,
-      reviewsCount: 198,
-      conversionRate: "62.2%",
-      status: "active",
-    },
-    {
-      id: "pt_4",
-      name: "Adesivo de Embalagem (Delivery)",
-      type: "delivery",
-      slug: "embalagem-delivery",
-      url: `${baseUrl}?origem=delivery`,
-      totalScans: 194,
-      reviewsCount: 136,
-      conversionRate: "70.1%",
-      status: "active",
-    },
-  ];
+      isCustom: true,
+    };
+
+    const updated = [newPt, ...customPoints];
+    setCustomPoints(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("review14_saved_qr_points", JSON.stringify(updated));
+    }
+    alert(`Ponto "${pointName}" salvo com sucesso na lista de Pontos Cadastrados!`);
+  };
+
+  const handleDeleteCustomPoint = (id: string) => {
+    const updated = customPoints.filter((p) => p.id !== id);
+    setCustomPoints(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("review14_saved_qr_points", JSON.stringify(updated));
+    }
+  };
 
   const handleCopy = (urlToCopy?: string) => {
     navigator.clipboard.writeText(urlToCopy || currentUrl);
@@ -206,11 +265,11 @@ export default function QrCodeAndLinksPage() {
               QR Codes &amp; Links de Coleta
             </h1>
             <span className="rounded-full bg-blue-100 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
-              4 pontos ativos
+              {allPoints.length} pontos ativos
             </span>
           </div>
           <p className="text-[13px] leading-4 text-[#64748B] dark:text-[#94A3B8] m-0">
-            Gere displays para mesas, balcões e comandas para capturar avaliações no momento da experiência.
+            Gere links e displays para mesas, balcões e comandas para capturar avaliações no momento da experiência.
           </p>
         </div>
 
@@ -265,6 +324,7 @@ export default function QrCodeAndLinksPage() {
               </label>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {[
+                  { id: "geral", label: "Link Principal (Padrão)" },
                   { id: "mesa", label: "Mesa do Salão" },
                   { id: "balcao", label: "Balcão / Recepção" },
                   { id: "conta", label: "Comanda / Conta" },
@@ -291,13 +351,13 @@ export default function QrCodeAndLinksPage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1 flex flex-col gap-1">
                   <label className="text-[12px] font-semibold text-slate-700 dark:text-slate-300">
-                    Número da Mesa:
+                    Número da Mesa (Opcional):
                   </label>
                   <input
                     type="text"
                     value={tableNumber}
                     onChange={(e) => setTableNumber(e.target.value)}
-                    placeholder="Ex: 14"
+                    placeholder="Ex: 1, 2, 14..."
                     className="rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#1F2937] p-2 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none focus:border-blue-600"
                   />
                 </div>
@@ -314,6 +374,22 @@ export default function QrCodeAndLinksPage() {
                     className="rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#1F2937] p-2 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none focus:border-blue-600"
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Dynamic Parameter: Attendant if balcao */}
+            {selectedType === "balcao" && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] font-semibold text-slate-700 dark:text-slate-300">
+                  Identificação ou Atendente (Opcional):
+                </label>
+                <input
+                  type="text"
+                  value={attendantName}
+                  onChange={(e) => setAttendantName(e.target.value)}
+                  placeholder="Ex: Balcão Principal ou Nome do Atendente"
+                  className="rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#1F2937] p-2 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none focus:border-blue-600"
+                />
               </div>
             )}
 
@@ -381,7 +457,7 @@ export default function QrCodeAndLinksPage() {
               {qrDataUrl && (
                 <a
                   href={qrDataUrl}
-                  download={`qrcode-${companySlug}-${selectedType}${selectedType === "mesa" ? `-mesa${tableNumber}` : ""}.png`}
+                  download={`qrcode-${companySlug}-${selectedType}${tableNumber.trim() ? `-mesa${tableNumber.trim()}` : ""}.png`}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] p-2 text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] hover:bg-slate-50 dark:hover:bg-[#1F2937] transition-colors"
                 >
                   <span>📥 Baixar PNG</span>
@@ -395,6 +471,15 @@ export default function QrCodeAndLinksPage() {
                 <span>{copiedLink ? "✓ Link Copiado" : "🔗 Copiar Link Direto"}</span>
               </button>
             </div>
+
+            {/* Botão de Salvar Ponto nos Cadastrados */}
+            <button
+              type="button"
+              onClick={handleSaveCurrentPoint}
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 p-2.5 text-xs font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
+            >
+              <span>💾 Salvar este Ponto nos Cadastrados</span>
+            </button>
           </div>
 
           {/* Table Tent Acrilic Display Preview */}
@@ -403,7 +488,7 @@ export default function QrCodeAndLinksPage() {
               Prévia do Display de Mesa (Acrílico)
             </span>
             <p className="text-xs text-slate-500 dark:text-slate-400 m-0">
-              Modelo pronto para colocar nas mesas. Ao apontar o celular, a mesa é detectada automaticamente.
+              Modelo pronto para colocar nas mesas. Ao apontar o celular, a avaliação é iniciada diretamente.
             </p>
 
             {/* Display Stand Mockup */}
@@ -434,7 +519,7 @@ export default function QrCodeAndLinksPage() {
               )}
 
               <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                Aponte a câmera do celular para avaliar • Mesa {tableNumber}
+                Aponte a câmera do celular para avaliar{selectedType === "mesa" && tableNumber.trim() ? ` • Mesa ${tableNumber.trim()}` : ""}
               </div>
 
               <div className="pt-1 text-[9px] text-slate-400 font-medium">
@@ -467,23 +552,31 @@ export default function QrCodeAndLinksPage() {
 
               <button
                 type="button"
-                onClick={() => handleCopy()}
+                onClick={() => handleCopy(baseUrl)}
                 className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline"
               >
-                + Novo Link
+                + Copiar Link Padrão
               </button>
             </div>
 
             {/* List of Active Points */}
             <div className="space-y-3">
-              {activePoints.map((pt) => (
+              {allPoints.map((pt) => (
                 <div
                   key={pt.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-slate-200/80 dark:border-[#1F2937] bg-slate-50/50 dark:bg-[#1F2937]/30 hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 shrink-0 rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#334155] flex items-center justify-center text-blue-600 font-bold">
-                      {pt.type === "mesa" ? "🪑" : pt.type === "balcao" ? "☕" : pt.type === "conta" ? "🧾" : "📦"}
+                      {pt.type === "mesa"
+                        ? "🪑"
+                        : pt.type === "balcao"
+                        ? "☕"
+                        : pt.type === "conta"
+                        ? "🧾"
+                        : pt.type === "delivery"
+                        ? "📦"
+                        : "⭐"}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -493,6 +586,11 @@ export default function QrCodeAndLinksPage() {
                         <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-semibold">
                           Ativo
                         </span>
+                        {pt.isCustom && (
+                          <span className="text-[10px] bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-1.5 py-0.2 rounded font-semibold">
+                            Personalizado
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
                         {pt.url}
@@ -501,7 +599,7 @@ export default function QrCodeAndLinksPage() {
                   </div>
 
                   {/* Metrics & Actions */}
-                  <div className="flex items-center gap-4 self-end sm:self-auto">
+                  <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-auto">
                     <div className="text-right">
                       <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
                         {pt.reviewsCount} avaliações
@@ -514,7 +612,7 @@ export default function QrCodeAndLinksPage() {
                     <button
                       type="button"
                       onClick={() => handleCopy(pt.url)}
-                      className="rounded-lg border border-slate-200 dark:border-[#334155] bg-white dark:bg-[#111827] p-2 hover:bg-slate-50 dark:hover:bg-[#1F2937] text-slate-600 dark:text-slate-300"
+                      className="rounded-lg border border-slate-200 dark:border-[#334155] bg-white dark:bg-[#111827] p-2 hover:bg-slate-50 dark:hover:bg-[#1F2937] text-slate-600 dark:text-slate-300 cursor-pointer"
                       title="Copiar Link"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -522,6 +620,20 @@ export default function QrCodeAndLinksPage() {
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                       </svg>
                     </button>
+
+                    {pt.isCustom && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCustomPoint(pt.id)}
+                        className="rounded-lg border border-red-200 dark:border-red-900/40 bg-white dark:bg-[#111827] p-2 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 cursor-pointer"
+                        title="Remover ponto salvo"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -27,10 +27,12 @@ interface ReviewItem {
   rating: number;
   comment: string;
   isPromoter: boolean;
+  isAnonymous: boolean;
   replied: boolean;
   replyText?: string | null;
   replyDate?: string | null;
   answers: CustomAnswerItem[];
+  media: { id: string; url: string; fileKey: string; type: string }[];
   phone?: string;
 }
 
@@ -113,7 +115,7 @@ export default function ReviewsPage() {
 
       setCompany(comp);
 
-      // 2. Busca todas as avaliações da empresa com respostas customizadas
+      // 2. Busca todas as avaliações da empresa com respostas customizadas e mídias
       const { data: revData, error: revErr } = await supabase
         .from("Review")
         .select(`
@@ -140,6 +142,12 @@ export default function ReviewsPage() {
               label,
               fieldType
             )
+          ),
+          ReviewMedia (
+            id,
+            url,
+            fileKey,
+            type
           )
         `)
         .eq("companyId", comp.id)
@@ -166,10 +174,12 @@ export default function ReviewsPage() {
             rating: Number(r.overallRating) || 5,
             comment: r.comment || "",
             isPromoter,
+            isAnonymous: Boolean(r.isAnonymous),
             replied: Boolean(r.merchantReply),
             replyText: r.merchantReply || null,
             replyDate: r.repliedAt ? formatRelativeTime(r.repliedAt) : null,
             answers: Array.isArray(r.CustomAnswer) ? r.CustomAnswer : [],
+            media: Array.isArray(r.ReviewMedia) ? r.ReviewMedia : [],
           };
         });
 
@@ -607,9 +617,15 @@ export default function ReviewsPage() {
                       <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#F8FAFC]">
                         {rev.customerName}
                       </span>
-                      <span className="rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 text-[10px] font-semibold px-1.5 py-0.2">
-                        Verificado
-                      </span>
+                      {rev.isAnonymous ? (
+                        <span className="rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold px-1.5 py-0.2">
+                          Anônimo
+                        </span>
+                      ) : (
+                        <span className="rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 text-[10px] font-semibold px-1.5 py-0.2">
+                          Verificado
+                        </span>
+                      )}
                     </div>
                     <span className="text-[12px] text-[#64748B] dark:text-[#94A3B8]">
                       {rev.timeAgo}
@@ -709,6 +725,33 @@ export default function ReviewsPage() {
 
                     return null;
                   })}
+                </div>
+              )}
+
+              {/* Fotos Anexadas pelo Cliente */}
+              {rev.media && rev.media.length > 0 && (
+                <div className="flex flex-col gap-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    Fotos anexadas pelo cliente ({rev.media.length}):
+                  </span>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {rev.media.map((m) => (
+                      <a
+                        key={m.id}
+                        href={m.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 hover:opacity-90 transition shadow-xs"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={m.url}
+                          alt="Foto do cliente"
+                          className="h-full w-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
 

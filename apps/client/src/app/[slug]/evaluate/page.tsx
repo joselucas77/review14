@@ -54,7 +54,11 @@ export default function EvaluatePage() {
   const [fieldText, setFieldText] = React.useState<Record<string, string>>({});
 
   // Photos
-  const [photos, setPhotos] = React.useState<string[]>([]);
+  const [selectedPhotos, setSelectedPhotos] = React.useState<
+    { id: string; file: File; previewUrl: string }[]
+  >([]);
+  const cameraInputRef = React.useRef<HTMLInputElement | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Load Company and Custom Fields from Supabase
   React.useEffect(() => {
@@ -62,6 +66,18 @@ export default function EvaluatePage() {
       try {
         setLoading(true);
         const supabase = createClient();
+
+        // Check authentication: customer must be logged in to evaluate
+        const { data: { user } } = await supabase.auth.getUser();
+        const storedAuth =
+          typeof window !== "undefined"
+            ? sessionStorage.getItem("review_auth")
+            : null;
+
+        if (!user && !storedAuth) {
+          router.replace(`/${slug}`);
+          return;
+        }
 
         // 1. Fetch Company
         const { data: compData, error: compErr } = await supabase
@@ -106,7 +122,7 @@ export default function EvaluatePage() {
     if (slug) {
       loadData();
     }
-  }, [slug]);
+  }, [slug, router]);
 
   // Display name formatting
   const storeDisplayName = React.useMemo(() => {
@@ -127,18 +143,34 @@ export default function EvaluatePage() {
     });
   };
 
-  const handleAddPhoto = () => {
-    const samplePhotos = [
-      "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=300&auto=format&fit=crop&q=80",
-      "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=300&auto=format&fit=crop&q=80",
-    ];
-    if (photos.length < 5) {
-      setPhotos([...photos, samplePhotos[photos.length % samplePhotos.length]]);
+  const handleFilesSelected = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const maxAllowed = 5 - selectedPhotos.length;
+    if (maxAllowed <= 0) return;
+
+    const toAdd = Array.from(files).slice(0, maxAllowed);
+    const newItems: { id: string; file: File; previewUrl: string }[] = [];
+
+    for (const file of toAdd) {
+      if (!file.type.startsWith("image/")) continue;
+      newItems.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
     }
+
+    setSelectedPhotos((prev) => [...prev, ...newItems]);
   };
 
-  const handleRemovePhoto = (index: number) => {
-    setPhotos(photos.filter((_, i) => i !== index));
+  const handleRemovePhoto = (id: string) => {
+    setSelectedPhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((p) => p.id !== id);
+    });
   };
 
   const getRatingLabel = (val: number) => {
@@ -178,10 +210,7 @@ export default function EvaluatePage() {
         email?: string | null;
         avatarUrl?: string | null;
         userId?: string | null;
-      } = {
-        isAnonymous: true,
-        name: "Cliente Verificado",
-      };
+      } | null = null;
 
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -203,15 +232,30 @@ export default function EvaluatePage() {
         } else if (typeof window !== "undefined") {
           const storedAuth = sessionStorage.getItem("review_auth");
           if (storedAuth) {
-            authUser = JSON.parse(storedAuth);
+            const parsed = JSON.parse(storedAuth);
+            const isAnon = parsed.isAnonymous ?? false;
+            authUser = {
+              isAnonymous: isAnon,
+              name: isAnon ? "Cliente Anônimo" : (parsed.name || "Cliente Verificado"),
+              email: isAnon ? null : (parsed.email || null),
+              avatarUrl: isAnon ? null : (parsed.avatarUrl || null),
+              userId: isAnon ? null : (parsed.userId || null),
+            };
           }
         }
       } catch (authErr) {
         console.warn("Could not retrieve user info:", authErr);
       }
 
+      if (!authUser) {
+        alert("Por favor, selecione uma forma de identificação para enviar sua avaliação.");
+        router.push(`/${slug}`);
+        return;
+      }
+
       const minGoogleRating = company?.minRatingForGoogle ?? 4;
       const isPromoter = overallRating >= minGoogleRating;
+      const isAnon = Boolean(authUser.isAnonymous);
 
       // 1. Insert into Review table (if company exists)
       if (company?.id) {
@@ -220,10 +264,10 @@ export default function EvaluatePage() {
           overallRating,
           comment: comment.trim() || null,
           companyId: company.id,
-          isAnonymous: authUser.isAnonymous ?? true,
-          anonymousName: authUser.name || "Cliente Verificado",
-          anonymousAvatar: authUser.avatarUrl || null,
-          userId: authUser.userId || null,
+          isAnonymous: isAnon,
+          anonymousName: isAnon ? "Cliente Anônimo" : (authUser.name || "Cliente Verificado"),
+          anonymousAvatar: isAnon ? null : (authUser.avatarUrl || null),
+          userId: isAnon ? null : (authUser.userId || null),
           isPublic: true,
           isResolved: isPromoter,
           updatedAt: new Date().toISOString(),
@@ -284,6 +328,43 @@ export default function EvaluatePage() {
 
             if (answersError) {
               console.error("Error inserting answers:", answersError);
+            }
+          }
+        }
+
+        // 3. Upload Photos to Supabase Storage and Insert ReviewMedia
+        if (selectedPhotos.length > 0) {
+          for (const p of selectedPhotos) {
+            try {
+              const fileExt = p.file.name.split(".").pop() || "jpg";
+              const filePath = `${company.id}/${reviewId}/${p.id}.${fileExt}`;
+
+              const { error: uploadError } = await supabase.storage
+                .from("reviews")
+                .upload(filePath, p.file, {
+                  contentType: p.file.type || "image/jpeg",
+                  upsert: true,
+                });
+
+              if (uploadError) {
+                console.error("Error uploading photo to Supabase Storage:", uploadError);
+                continue;
+              }
+
+              const { data: { publicUrl } } = supabase.storage
+                .from("reviews")
+                .getPublicUrl(filePath);
+
+              await supabase.from("ReviewMedia").insert({
+                id: p.id,
+                reviewId,
+                url: publicUrl,
+                fileKey: filePath,
+                type: "IMAGE",
+                sizeBytes: p.file.size,
+              });
+            } catch (mediaErr) {
+              console.error("Error saving review media:", mediaErr);
             }
           }
         }
@@ -452,65 +533,123 @@ export default function EvaluatePage() {
 
           {/* Fotos da Visita */}
           <div className="flex flex-col gap-2">
-            <span className="text-[14px] font-semibold text-[#0F172A]">
-              Fotos da visita
-            </span>
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-              {/* Botão de Adicionar */}
-              <button
-                type="button"
-                onClick={handleAddPhoto}
-                className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-[10px] border-[1.5px] border-dashed border-[#3B82F6] bg-[#EFF6FF] text-[#2563EB] transition hover:bg-blue-100/70"
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#2563EB"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
-                <span className="text-[11px] font-semibold">Adicionar</span>
-              </button>
-
-              {/* Thumbnails Adicionadas */}
-              {photos.map((src, idx) => (
-                <div
-                  key={idx}
-                  className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[#E2E8F0] bg-slate-100 shadow-sm"
-                >
-                  <img
-                    src={src}
-                    alt={`Foto ${idx + 1}`}
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemovePhoto(idx)}
-                    className="absolute right-1 top-1 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#DC2626] text-white shadow-sm hover:scale-105"
-                    aria-label="Remover foto"
-                  >
-                    <svg
-                      width="8"
-                      height="8"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#FFFFFF"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-semibold text-[#0F172A]">
+                Fotos da visita
+              </span>
+              <span className="text-[12px] text-[#64748B]">
+                {selectedPhotos.length}/5 fotos • Opcional
+              </span>
             </div>
+
+            {/* Inputs Nativos Ocultos para Câmera e Arquivo */}
+            <input
+              type="file"
+              ref={cameraInputRef}
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                handleFilesSelected(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                handleFilesSelected(e.target.files);
+                e.target.value = "";
+              }}
+            />
+
+            {/* Botões de Ação para Fotos */}
+            {selectedPhotos.length < 5 && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50/80 p-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition active:scale-98 cursor-pointer"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  <span>Tirar Foto</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition active:scale-98 shadow-xs cursor-pointer"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <span>Escolher do Dispositivo</span>
+                </button>
+              </div>
+            )}
+
+            {/* Thumbnails Adicionadas */}
+            {selectedPhotos.length > 0 && (
+              <div className="flex items-center gap-2.5 overflow-x-auto pb-1 pt-1">
+                {selectedPhotos.map((item) => (
+                  <div
+                    key={item.id}
+                    className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[#E2E8F0] bg-slate-100 shadow-sm"
+                  >
+                    <img
+                      src={item.previewUrl}
+                      alt="Foto selecionada"
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(item.id)}
+                      className="absolute right-1 top-1 flex h-[20px] w-[20px] items-center justify-center rounded-full bg-[#DC2626] text-white shadow-sm hover:scale-105 cursor-pointer"
+                      aria-label="Remover foto"
+                    >
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#FFFFFF"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Seção Dinâmica de Perguntas Personalizadas (PRO) */}

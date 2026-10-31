@@ -127,20 +127,6 @@ export function LoginOptionsCard({
           <span>Entrar com e-mail e senha</span>
         </Button>
 
-        {/* Guest Continue Option */}
-        {onContinueAsGuest && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            fullWidth
-            onClick={onContinueAsGuest}
-            className="text-[13px] font-semibold text-[#2563EB] hover:bg-blue-50 py-2.5"
-          >
-            Avaliar rapidamente sem cadastro →
-          </Button>
-        )}
-
         {/* Footer Link */}
         <div className="flex items-center justify-center gap-1 pt-2 text-center">
           <span className="text-[13px] text-[#475569]">Não tem uma conta?</span>
@@ -152,6 +138,19 @@ export function LoginOptionsCard({
             Criar conta no Review14
           </button>
         </div>
+
+        {/* Guest / Anonymous Link */}
+        {onContinueAsGuest && (
+          <div className="flex flex-col items-center pt-1 border-t border-slate-100 mt-1">
+            <button
+              type="button"
+              onClick={onContinueAsGuest}
+              className="text-[12px] font-medium text-[#64748B] hover:text-[#0F172A] hover:underline cursor-pointer py-1"
+            >
+              Avaliar rapidamente sem cadastro →
+            </button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
