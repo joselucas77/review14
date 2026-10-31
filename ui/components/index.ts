@@ -11,3 +11,4 @@ export * from "./separator";
 export * from "./star-rating";
 export * from "./tabs";
 export * from "./textarea";
+export * from "./sonner";

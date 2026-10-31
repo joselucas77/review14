@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getClientStoreUrl } from "@/lib/urls";
+import { toast } from "@saas/ui/components/sonner";
 
 interface Review {
   id: string;
@@ -190,9 +191,11 @@ export default function TenantDashboardPage() {
         .eq("id", reviewId);
 
       if (error) {
-        alert("Erro ao responder avaliação: " + error.message);
+        toast.error("Erro ao responder avaliação: " + error.message);
         return;
       }
+
+      toast.success("Resposta enviada com sucesso!");
 
       setReviewsList((prev) =>
         prev.map((r) =>
@@ -203,7 +206,7 @@ export default function TenantDashboardPage() {
       setReplyInput("");
     } catch (err) {
       console.error("Erro ao salvar resposta:", err);
-      alert("Ocorreu um erro ao salvar a resposta.");
+      toast.error("Ocorreu um erro ao salvar a resposta.");
     } finally {
       setIsSavingReply(false);
     }

@@ -272,39 +272,6 @@ export default function OnboardingPage() {
         if (insertError) {
           throw insertError;
         }
-
-        // 4. Se for nova empresa PRO, cria critérios iniciais de avaliação para o lojista
-        const initialCustomFields = [
-          {
-            id: `cf_${Date.now()}_1`,
-            companyId: companyId,
-            label: "Qualidade dos Produtos / Comida",
-            fieldType: "RATING_5",
-            order: 1,
-            isActive: true,
-            updatedAt: new Date().toISOString(),
-          },
-          {
-            id: `cf_${Date.now()}_2`,
-            companyId: companyId,
-            label: "Agilidade e Atendimento",
-            fieldType: "RATING_5",
-            order: 2,
-            isActive: true,
-            updatedAt: new Date().toISOString(),
-          },
-          {
-            id: `cf_${Date.now()}_3`,
-            companyId: companyId,
-            label: "Ambiente e Limpeza",
-            fieldType: "RATING_5",
-            order: 3,
-            isActive: true,
-            updatedAt: new Date().toISOString(),
-          },
-        ];
-
-        await supabase.from("CustomField").insert(initialCustomFields);
       }
 
       // 5. Salva dados locais da empresa ativa para uso na Dashboard

@@ -6,6 +6,7 @@ import { LogoBadge } from "@/components/auth/logo-badge";
 import { LoginOptionsCard } from "@/components/auth/login-options-card";
 import { EmailLoginCard } from "@/components/auth/email-login-card";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@ui/components/sonner";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -44,7 +45,7 @@ export default function LoginPage() {
         setErrorMsg("Não foi possível conectar com o Google.");
       }
     } else {
-      alert("Autenticação com Apple em desenvolvimento.");
+      toast.info("Autenticação com Apple em desenvolvimento.");
     }
   };
 

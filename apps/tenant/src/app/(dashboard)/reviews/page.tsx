@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getClientStoreUrl } from "@/lib/urls";
+import { toast } from "@saas/ui/components/sonner";
 
 interface CustomAnswerItem {
   id: string;
@@ -238,9 +239,11 @@ export default function ReviewsPage() {
         .eq("id", reviewId);
 
       if (error) {
-        alert("Erro ao salvar resposta: " + error.message);
+        toast.error("Erro ao salvar resposta: " + error.message);
         return;
       }
+
+      toast.success("Resposta enviada com sucesso!");
 
       setReviews((prev) =>
         prev.map((r) =>
@@ -259,7 +262,7 @@ export default function ReviewsPage() {
       setReplyInput("");
     } catch (err) {
       console.error("Erro ao enviar resposta:", err);
-      alert("Ocorreu um erro ao salvar a resposta.");
+      toast.error("Ocorreu um erro ao salvar a resposta.");
     } finally {
       setIsSavingReply(false);
     }

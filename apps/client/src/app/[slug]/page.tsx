@@ -7,6 +7,7 @@ import { LoginOptionsCard } from "@/components/auth/login-options-card";
 import { EmailLoginCard } from "@/components/auth/email-login-card";
 import { RegisterCard } from "@/components/auth/register-card";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@ui/components/sonner";
 
 type AuthMode = "options" | "email" | "register";
 
@@ -26,40 +27,38 @@ export default function StoreAuthPage() {
 
   const [mode, setMode] = React.useState<AuthMode>("options");
   const [storeData, setStoreData] = React.useState<StoreData | null>(null);
+  const [currentUser, setCurrentUser] = React.useState<{
+    name?: string | null;
+    email?: string | null;
+    avatarUrl?: string | null;
+    id?: string;
+  } | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [storeNotFound, setStoreNotFound] = React.useState(false);
 
-  // Fetch real store from Supabase & check existing auth
+  // Fetch real store from Supabase & check existing auth (sem redirecionar forçado)
   React.useEffect(() => {
     async function init() {
       try {
         setLoading(true);
         const supabase = createClient();
 
-        // 1. Check if user is already authenticated
+        // 1. Verifica se há usuário autenticado no navegador (sem forçar redirecionamento)
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          if (typeof window !== "undefined") {
-            sessionStorage.setItem(
-              "review_auth",
-              JSON.stringify({
-                isAnonymous: false,
-                name:
-                  user.user_metadata?.full_name ||
-                  user.user_metadata?.name ||
-                  user.email?.split("@")[0] ||
-                  "Cliente Verificado",
-                email: user.email,
-                avatarUrl:
-                  user.user_metadata?.avatar_url ||
-                  user.user_metadata?.picture ||
-                  `https://api.dicebear.com/7.x/identicon/svg?seed=${user.email}`,
-                userId: user.id,
-              })
-            );
-          }
-          router.push(`/${slug}/evaluate`);
-          return;
+          setCurrentUser({
+            name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              user.email?.split("@")[0] ||
+              "Cliente Verificado",
+            email: user.email,
+            avatarUrl:
+              user.user_metadata?.avatar_url ||
+              user.user_metadata?.picture ||
+              null,
+            id: user.id,
+          });
         }
 
         // 2. Fetch Store
@@ -88,7 +87,7 @@ export default function StoreAuthPage() {
     if (slug) {
       init();
     }
-  }, [slug, router]);
+  }, [slug]);
 
   // Destination name: Real tradeName if available, else formatted slug
   const destinationName = React.useMemo(() => {
@@ -129,14 +128,14 @@ export default function StoreAuthPage() {
 
         if (error) {
           console.error("Erro no login Google:", error);
-          alert(error.message || "Erro ao conectar com Google.");
+          toast.error(error.message || "Erro ao conectar com Google.");
         }
       } catch (err: any) {
         console.error("Erro no login Google:", err);
-        alert("Não foi possível conectar com o Google.");
+        toast.error("Não foi possível conectar com o Google.");
       }
     } else {
-      alert("Autenticação com Apple em desenvolvimento.");
+      toast.info("Autenticação com Apple em desenvolvimento.");
     }
   };
 
@@ -149,7 +148,7 @@ export default function StoreAuthPage() {
       });
 
       if (error) {
-        alert(error.message || "E-mail ou senha incorretos.");
+        toast.error(error.message || "E-mail ou senha incorretos.");
         return;
       }
 
@@ -170,10 +169,11 @@ export default function StoreAuthPage() {
           })
         );
       }
+      toast.success("Login realizado com sucesso!");
       router.push(`/${slug}/evaluate`);
     } catch (err: any) {
       console.error("Erro no login:", err);
-      alert("Ocorreu um erro ao fazer login.");
+      toast.error("Ocorreu um erro ao fazer login.");
     }
   };
 
@@ -196,7 +196,7 @@ export default function StoreAuthPage() {
       });
 
       if (error) {
-        alert(error.message || "Falha ao criar conta.");
+        toast.error(error.message || "Falha ao criar conta.");
         return;
       }
 
@@ -212,10 +212,42 @@ export default function StoreAuthPage() {
           })
         );
       }
+      toast.success("Conta criada com sucesso!");
       router.push(`/${slug}/evaluate`);
     } catch (err: any) {
       console.error("Erro no cadastro:", err);
-      alert("Ocorreu um erro ao realizar cadastro.");
+      toast.error("Ocorreu um erro ao realizar cadastro.");
+    }
+  };
+
+  const handleContinueAsUser = () => {
+    if (!currentUser) return;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(
+        "review_auth",
+        JSON.stringify({
+          isAnonymous: false,
+          name: currentUser.name || "Cliente Verificado",
+          email: currentUser.email,
+          avatarUrl: currentUser.avatarUrl,
+          userId: currentUser.id,
+        })
+      );
+    }
+    router.push(`/${slug}/evaluate`);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("review_auth");
+      }
+      toast.info("Você desconectou da sua conta.");
+    } catch (err) {
+      console.warn("Erro ao desconectar:", err);
     }
   };
 
@@ -279,6 +311,9 @@ export default function StoreAuthPage() {
                   onSelectEmail={() => setMode("email")}
                   onGoToRegister={() => setMode("register")}
                   onContinueAsGuest={handleGuestContinue}
+                  currentUser={currentUser}
+                  onContinueAsUser={handleContinueAsUser}
+                  onSignOut={handleSignOut}
                 />
               </>
             )}

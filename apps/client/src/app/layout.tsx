@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Toaster } from "@ui/components/sonner";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background text-foreground antialiased selection:bg-primary/20">
         <main className="mx-auto min-h-screen max-w-md flex flex-col bg-background">
           {children}
+          <Toaster richColors position="top-center" closeButton />
         </main>
       </body>
     </html>

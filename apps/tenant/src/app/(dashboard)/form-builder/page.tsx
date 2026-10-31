@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getClientStoreUrl } from "@/lib/urls";
+import { toast } from "@saas/ui/components/sonner";
 
 interface CustomFieldItem {
   id: string;
@@ -63,52 +64,29 @@ export default function FormBuilderPage() {
         if (activeCompany) {
           setCompany(activeCompany);
 
-          // Busca campos no Supabase
+          // Busca campos no Supabase (sem criar nenhum critério padrão forçado)
           if (activeCompany.id) {
+            // Remove quaisquer critérios residuais gerados automaticamente
+            await supabase
+              .from("CustomField")
+              .delete()
+              .eq("companyId", activeCompany.id)
+              .in("label", [
+                "Qualidade dos Produtos / Comida",
+                "Agilidade e Atendimento",
+                "Ambiente e Limpeza",
+              ]);
+
             const { data: dbFields, error } = await supabase
               .from("CustomField")
               .select("*")
               .eq("companyId", activeCompany.id)
               .order("order", { ascending: true });
 
-            if (!error && dbFields && dbFields.length > 0) {
+            if (!error && dbFields) {
               setFields(dbFields as CustomFieldItem[]);
-            } else if (!error && (!dbFields || dbFields.length === 0)) {
-              // Cria critérios iniciais se ainda não houver nenhum
-              const initialFields: CustomFieldItem[] = [
-                {
-                  id: `cf_${Date.now()}_1`,
-                  companyId: activeCompany.id,
-                  label: "Qualidade dos Produtos / Comida",
-                  fieldType: "RATING_5",
-                  order: 1,
-                  isActive: true,
-                },
-                {
-                  id: `cf_${Date.now()}_2`,
-                  companyId: activeCompany.id,
-                  label: "Agilidade e Atendimento",
-                  fieldType: "RATING_5",
-                  order: 2,
-                  isActive: true,
-                },
-                {
-                  id: `cf_${Date.now()}_3`,
-                  companyId: activeCompany.id,
-                  label: "Ambiente e Limpeza",
-                  fieldType: "RATING_5",
-                  order: 3,
-                  isActive: true,
-                },
-              ];
-
-              await supabase.from("CustomField").insert(
-                initialFields.map((f) => ({
-                  ...f,
-                  updatedAt: new Date().toISOString(),
-                }))
-              );
-              setFields(initialFields);
+            } else {
+              setFields([]);
             }
           }
         }

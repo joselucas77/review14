@@ -16,6 +16,12 @@ interface LoginOptionsCardProps {
   onSelectEmail: () => void;
   onGoToRegister: () => void;
   onContinueAsGuest?: () => void;
+  currentUser?: {
+    name?: string | null;
+    email?: string | null;
+  } | null;
+  onContinueAsUser?: () => void;
+  onSignOut?: () => void;
 }
 
 export function LoginOptionsCard({
@@ -24,19 +30,50 @@ export function LoginOptionsCard({
   onSelectEmail,
   onGoToRegister,
   onContinueAsGuest,
+  currentUser,
+  onContinueAsUser,
+  onSignOut,
 }: LoginOptionsCardProps) {
   return (
     <Card className="w-full border-[#E2E8F0] bg-white p-2 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.04)] sm:p-4">
-      <CardHeader className="text-center pb-5 pt-3">
+      <CardHeader className="text-center pb-4 pt-3">
         <CardTitle className="text-[20px] font-bold leading-6 text-[#0F172A]">
-          Entre para continuar
+          Entre para avaliar
         </CardTitle>
         <CardDescription className="text-[13px] leading-snug text-[#475569]">
-          Acesse suas avaliações e acompanhe as experiências compartilhadas.
+          Identifique-se para validar sua experiência ou avalie anonimamente.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-3">
+        {/* Banner se já estiver autenticado */}
+        {currentUser && (
+          <div className="flex flex-col gap-2 rounded-xl bg-blue-50/80 border border-blue-200 p-3 text-center mb-1">
+            <span className="text-[12px] text-blue-900">
+              Conectado como <strong>{currentUser.name || currentUser.email}</strong>
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                fullWidth
+                onClick={onContinueAsUser}
+                className="font-semibold text-xs shadow-xs"
+              >
+                Continuar com esta conta →
+              </Button>
+              {onSignOut && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="text-[11px] text-slate-500 hover:text-slate-800 underline px-1 cursor-pointer whitespace-nowrap"
+                >
+                  Sair
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {/* Google Button */}
         <Button
           type="button"

@@ -4,6 +4,7 @@ import * as React from "react";
 import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
 import { getClientBaseUrl, getClientStoreUrl } from "@/lib/urls";
+import { toast } from "@saas/ui/components/sonner";
 
 interface ActiveQrPoint {
   id: string;
@@ -234,7 +235,7 @@ export default function QrCodeAndLinksPage() {
     if (typeof window !== "undefined") {
       localStorage.setItem("review14_saved_qr_points", JSON.stringify(updated));
     }
-    alert(`Ponto "${pointName}" salvo com sucesso na lista de Pontos Cadastrados!`);
+    toast.success(`Ponto "${pointName}" salvo com sucesso nos cadastrados!`);
   };
 
   const handleDeleteCustomPoint = (id: string) => {
@@ -243,11 +244,13 @@ export default function QrCodeAndLinksPage() {
     if (typeof window !== "undefined") {
       localStorage.setItem("review14_saved_qr_points", JSON.stringify(updated));
     }
+    toast.info("Ponto de coleta removido com sucesso.");
   };
 
   const handleCopy = (urlToCopy?: string) => {
     navigator.clipboard.writeText(urlToCopy || currentUrl);
     setCopiedLink(true);
+    toast.success("Link copiado com sucesso!");
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
@@ -702,7 +705,7 @@ export default function QrCodeAndLinksPage() {
               <button
                 type="button"
                 onClick={() => {
-                  alert(`Gerando pacote PDF com os QR Codes das Mesas 1 até ${batchCount}...`);
+                  toast.info(`Gerando pacote PDF com os QR Codes das Mesas 1 até ${batchCount}...`);
                   setBatchModalOpen(false);
                 }}
                 className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs"

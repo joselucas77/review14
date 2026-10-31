@@ -6,6 +6,7 @@ import { Button } from "@ui/components/button";
 import { Badge } from "@ui/components/badge";
 import { Textarea } from "@ui/components/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@ui/components/sonner";
 
 interface CompanyData {
   id: string;
@@ -193,7 +194,7 @@ export default function EvaluatePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (overallRating === 0) {
-      alert("Por favor, selecione uma nota de 1 a 5 estrelas.");
+      toast.warning("Por favor, selecione uma nota de 1 a 5 estrelas.");
       return;
     }
 
@@ -213,33 +214,51 @@ export default function EvaluatePage() {
       } | null = null;
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+        const storedAuth =
+          typeof window !== "undefined"
+            ? sessionStorage.getItem("review_auth")
+            : null;
+        let parsedStored: any = null;
+        if (storedAuth) {
+          try {
+            parsedStored = JSON.parse(storedAuth);
+          } catch {}
+        }
+
+        // Se o cliente escolheu avaliar anonimamente sem cadastro, respeita sempre
+        if (parsedStored?.isAnonymous) {
           authUser = {
-            isAnonymous: false,
-            name:
-              user.user_metadata?.full_name ||
-              user.user_metadata?.name ||
-              user.email?.split("@")[0] ||
-              "Cliente Verificado",
-            email: user.email,
-            avatarUrl:
-              user.user_metadata?.avatar_url ||
-              user.user_metadata?.picture ||
-              null,
-            userId: user.id,
+            isAnonymous: true,
+            name: "Cliente Anônimo",
+            email: null,
+            avatarUrl: null,
+            userId: null,
           };
-        } else if (typeof window !== "undefined") {
-          const storedAuth = sessionStorage.getItem("review_auth");
-          if (storedAuth) {
-            const parsed = JSON.parse(storedAuth);
-            const isAnon = parsed.isAnonymous ?? false;
+        } else {
+          // Caso contrário, busca dados do usuário autenticado no Supabase ou armazenados
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
             authUser = {
-              isAnonymous: isAnon,
-              name: isAnon ? "Cliente Anônimo" : (parsed.name || "Cliente Verificado"),
-              email: isAnon ? null : (parsed.email || null),
-              avatarUrl: isAnon ? null : (parsed.avatarUrl || null),
-              userId: isAnon ? null : (parsed.userId || null),
+              isAnonymous: false,
+              name:
+                user.user_metadata?.full_name ||
+                user.user_metadata?.name ||
+                user.email?.split("@")[0] ||
+                "Cliente Verificado",
+              email: user.email,
+              avatarUrl:
+                user.user_metadata?.avatar_url ||
+                user.user_metadata?.picture ||
+                null,
+              userId: user.id,
+            };
+          } else if (parsedStored) {
+            authUser = {
+              isAnonymous: false,
+              name: parsedStored.name || "Cliente Verificado",
+              email: parsedStored.email || null,
+              avatarUrl: parsedStored.avatarUrl || null,
+              userId: parsedStored.userId || null,
             };
           }
         }
@@ -248,7 +267,7 @@ export default function EvaluatePage() {
       }
 
       if (!authUser) {
-        alert("Por favor, selecione uma forma de identificação para enviar sua avaliação.");
+        toast.warning("Por favor, selecione uma forma de identificação para enviar sua avaliação.");
         router.push(`/${slug}`);
         return;
       }
@@ -385,10 +404,12 @@ export default function EvaluatePage() {
         );
       }
 
+      toast.success("Avaliação enviada com sucesso!");
       router.push(`/${slug}/thanks`);
     } catch (err) {
       console.error("Unexpected submission error:", err);
       // Still proceed to thanks page gracefully
+      toast.success("Avaliação enviada com sucesso!");
       router.push(`/${slug}/thanks`);
     } finally {
       setIsSubmitting(false);

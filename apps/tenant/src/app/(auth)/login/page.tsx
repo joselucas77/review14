@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@saas/ui/components/sonner";
 
 function LoginForm() {
   const router = useRouter();
@@ -227,7 +228,7 @@ function LoginForm() {
             </label>
             <button
               type="button"
-              onClick={() => alert("Instruções de recuperação foram enviadas para o seu e-mail cadastrado.")}
+              onClick={() => toast.info("Instruções de recuperação foram enviadas para o seu e-mail cadastrado.")}
               className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
               Esqueceu a senha?

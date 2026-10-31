@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@saas/ui/components/sonner";
 
 export const metadata: Metadata = {
   title: "Review14 | Dashboard do Estabelecimento",
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1220] text-slate-900 dark:text-slate-100 antialiased font-sans transition-colors duration-200">
         <ThemeProvider>
           {children}
+          <Toaster richColors position="top-right" closeButton />
         </ThemeProvider>
       </body>
     </html>
