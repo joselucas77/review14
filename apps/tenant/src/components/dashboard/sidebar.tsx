@@ -55,6 +55,22 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
             ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
             : name.slice(0, 2).toUpperCase();
           setUserInitials(initials);
+
+          // Busca empresa no Supabase vinculada ao proprietário logado
+          const { data: company } = await supabase
+            .from("Company")
+            .select("*")
+            .eq("ownerId", user.id)
+            .maybeSingle();
+
+          if (company) {
+            setCompanyName(company.tradeName);
+            setCompanyCategory(company.category || "Unidade Centro");
+            setCompanyInitials(company.tradeName.slice(0, 2).toUpperCase());
+            if (typeof window !== "undefined") {
+              localStorage.setItem("review14_current_company", JSON.stringify(company));
+            }
+          }
         }
       } catch (err) {
         console.error("Error loading user in sidebar:", err);
@@ -85,6 +101,17 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
           <rect x="14" y="3" width="7" height="5" fill="none" stroke={active ? (isDark ? "#60A5FA" : "#2563EB") : (isDark ? "#94A3B8" : "#64748B")} strokeWidth="2" />
           <rect x="14" y="12" width="7" height="9" fill="none" stroke={active ? (isDark ? "#60A5FA" : "#2563EB") : (isDark ? "#94A3B8" : "#64748B")} strokeWidth="2" />
           <rect x="3" y="16" width="7" height="5" fill="none" stroke={active ? (isDark ? "#60A5FA" : "#2563EB") : (isDark ? "#94A3B8" : "#64748B")} strokeWidth="2" />
+        </svg>
+      ),
+    },
+    {
+      label: "Perguntas PRO",
+      href: "/form-builder",
+      badge: "PRO",
+      icon: (active: boolean) => (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? (isDark ? "#60A5FA" : "#2563EB") : (isDark ? "#94A3B8" : "#64748B")} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
         </svg>
       ),
     },

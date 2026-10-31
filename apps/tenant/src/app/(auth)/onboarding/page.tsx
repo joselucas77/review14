@@ -36,12 +36,13 @@ export default function OnboardingPage() {
 
   // Estados de submissão e autenticação
   const [loading, setLoading] = React.useState(false);
+  const [userId, setUserId] = React.useState<string | null>(null);
   const [userEmail, setUserEmail] = React.useState<string | null>(null);
   const [userName, setUserName] = React.useState<string | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
-  // Carrega o usuário autenticado do Supabase
+  // Carrega o usuário autenticado do Supabase e dados existentes da loja
   React.useEffect(() => {
     async function loadUser() {
       try {
@@ -51,12 +52,34 @@ export default function OnboardingPage() {
         } = await supabase.auth.getUser();
 
         if (user) {
+          setUserId(user.id);
           setUserEmail(user.email || null);
           const metaName =
             user.user_metadata?.name ||
             user.user_metadata?.full_name ||
             (user.email ? user.email.split("@")[0] : null);
           setUserName(metaName);
+
+          // Verifica se já existe empresa cadastrada no banco para este usuário
+          const { data: existingCompany } = await supabase
+            .from("Company")
+            .select("*")
+            .eq("ownerId", user.id)
+            .maybeSingle();
+
+          if (existingCompany) {
+            if (existingCompany.tradeName) setTradeName(existingCompany.tradeName);
+            if (existingCompany.legalName) setLegalName(existingCompany.legalName);
+            if (existingCompany.slug) setSlug(existingCompany.slug);
+            if (existingCompany.category) setSelectedCategory(existingCompany.category);
+            if (existingCompany.phone) setPhone(existingCompany.phone);
+            if (existingCompany.cnpj) {
+              setHasCnpj(true);
+              setCnpj(existingCompany.cnpj);
+            }
+            if (existingCompany.city) setCity(existingCompany.city);
+            if (existingCompany.state) setState(existingCompany.state);
+          }
         }
       } catch (e) {
         console.warn("Usuário anônimo ou sessão local:", e);
@@ -134,7 +157,7 @@ export default function OnboardingPage() {
     }
   };
 
-  // Finalizar Onboarding
+  // Finalizar Onboarding e Salvar no Banco de Dados
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -148,10 +171,145 @@ export default function OnboardingPage() {
     setLoading(true);
 
     try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setErrorMsg("Sessão expirada. Por favor, faça login novamente.");
+        setLoading(false);
+        router.push("/login");
+        return;
+      }
+
       const finalSlug = slug || generateSlug(tradeName) || "minha-loja";
       const finalLegalName = legalName.trim() || tradeName.trim();
 
-      const companyData = {
+      // 1. Garante que o usuário existe na tabela User com papel TENANT
+      await supabase.from("User").upsert(
+        {
+          id: user.id,
+          email: user.email!,
+          name: userName || user.user_metadata?.name || user.email!.split("@")[0],
+          role: "TENANT",
+          authProvider: user.app_metadata?.provider === "google" ? "GOOGLE" : "CREDENTIALS",
+          updatedAt: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+
+      // 2. Verifica se o slug já está em uso por outro proprietário
+      const { data: existingSlugCompany } = await supabase
+        .from("Company")
+        .select("id, ownerId")
+        .eq("slug", finalSlug)
+        .maybeSingle();
+
+      if (existingSlugCompany && existingSlugCompany.ownerId !== user.id) {
+        setErrorMsg(
+          `O link '${finalSlug}' já está em uso por outro estabelecimento. Altere o Nome Fantasia ou customize o link do QR Code.`
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 3. Verifica se o usuário já tem uma empresa cadastrada para atualizar ou inserir
+      const { data: existingUserCompany } = await supabase
+        .from("Company")
+        .select("id")
+        .eq("ownerId", user.id)
+        .maybeSingle();
+
+      let companyId = existingUserCompany?.id;
+      let isNewCompany = false;
+
+      if (existingUserCompany) {
+        // Atualiza empresa existente
+        const { error: updateError } = await supabase
+          .from("Company")
+          .update({
+            slug: finalSlug,
+            tradeName: tradeName.trim(),
+            legalName: finalLegalName,
+            category: selectedCategory,
+            phone: phone.trim() || null,
+            cnpj: hasCnpj && cnpj.trim() ? cnpj.replace(/\D/g, "") : null,
+            city: city.trim() || null,
+            state: state.trim() || null,
+            planTier: "PRO",
+            subscriptionStatus: "TRIALING",
+            updatedAt: new Date().toISOString(),
+          })
+          .eq("id", existingUserCompany.id);
+
+        if (updateError) {
+          throw updateError;
+        }
+      } else {
+        // Cria nova empresa
+        isNewCompany = true;
+        companyId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+        const { error: insertError } = await supabase.from("Company").insert({
+          id: companyId,
+          slug: finalSlug,
+          tradeName: tradeName.trim(),
+          legalName: finalLegalName,
+          category: selectedCategory,
+          phone: phone.trim() || null,
+          cnpj: hasCnpj && cnpj.trim() ? cnpj.replace(/\D/g, "") : null,
+          city: city.trim() || null,
+          state: state.trim() || null,
+          planTier: "PRO",
+          subscriptionStatus: "TRIALING",
+          minRatingForGoogle: 4,
+          isActive: true,
+          ownerId: user.id,
+          updatedAt: new Date().toISOString(),
+        });
+
+        if (insertError) {
+          throw insertError;
+        }
+
+        // 4. Se for nova empresa PRO, cria critérios iniciais de avaliação para o lojista
+        const initialCustomFields = [
+          {
+            id: `cf_${Date.now()}_1`,
+            companyId: companyId,
+            label: "Qualidade dos Produtos / Comida",
+            fieldType: "RATING_5",
+            order: 1,
+            isActive: true,
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: `cf_${Date.now()}_2`,
+            companyId: companyId,
+            label: "Agilidade e Atendimento",
+            fieldType: "RATING_5",
+            order: 2,
+            isActive: true,
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: `cf_${Date.now()}_3`,
+            companyId: companyId,
+            label: "Ambiente e Limpeza",
+            fieldType: "RATING_5",
+            order: 3,
+            isActive: true,
+            updatedAt: new Date().toISOString(),
+          },
+        ];
+
+        await supabase.from("CustomField").insert(initialCustomFields);
+      }
+
+      // 5. Salva dados locais da empresa ativa para uso na Dashboard
+      const fullCompanyData = {
+        id: companyId,
         tradeName: tradeName.trim(),
         legalName: finalLegalName,
         slug: finalSlug,
@@ -164,19 +322,23 @@ export default function OnboardingPage() {
         subscriptionStatus: "TRIALING",
       };
 
-      // Salva dados locais da empresa ativa para uso na Dashboard
       if (typeof window !== "undefined") {
-        localStorage.setItem("review14_current_company", JSON.stringify(companyData));
+        localStorage.setItem("review14_current_company", JSON.stringify(fullCompanyData));
       }
 
-      setSuccessMsg("Estabelecimento configurado com sucesso! Redirecionando...");
+      setSuccessMsg(
+        isNewCompany
+          ? "Estabelecimento e critérios PRO configurados com sucesso! Redirecionando..."
+          : "Dados do estabelecimento atualizados com sucesso! Redirecionando..."
+      );
+
       setTimeout(() => {
-        router.push("/");
+        router.push("/form-builder");
         router.refresh();
       }, 700);
     } catch (err: any) {
-      console.error("Erro ao salvar estabelecimento:", err);
-      setErrorMsg("Ocorreu um erro ao salvar o estabelecimento. Tente novamente.");
+      console.error("Erro ao salvar estabelecimento no banco:", err);
+      setErrorMsg(err.message || "Ocorreu um erro ao salvar o estabelecimento no banco de dados.");
       setLoading(false);
     }
   };

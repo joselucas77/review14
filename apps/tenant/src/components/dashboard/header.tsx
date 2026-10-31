@@ -19,7 +19,25 @@ export function Header({
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [publicUrl, setPublicUrl] = React.useState("http://localhost:3000");
   const isDark = theme === "dark";
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("review14_current_company");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed.slug) {
+            const clientOrigin = window.location.origin.replace(":3002", ":3000");
+            setPublicUrl(`${clientOrigin}/${parsed.slug}`);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  }, []);
 
   return (
     <header
@@ -63,7 +81,7 @@ export function Header({
       <div className="flex items-center gap-3 sm:gap-4">
         {/* Public Page Button */}
         <Link
-          href="http://localhost:3000"
+          href={publicUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 rounded-lg border border-[#DBEAFE] dark:border-blue-900/60 bg-[#EFF6FF] dark:bg-blue-950/40 px-3 py-1.5 hover:bg-blue-100/70 dark:hover:bg-blue-900/60 transition-colors"

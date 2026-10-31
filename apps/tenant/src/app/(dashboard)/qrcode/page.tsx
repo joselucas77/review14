@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import QRCode from "qrcode";
+import { createClient } from "@/lib/supabase/client";
 
 interface ActiveQrPoint {
   id: string;
@@ -16,16 +17,56 @@ interface ActiveQrPoint {
 }
 
 export default function QrCodeAndLinksPage() {
+  const [companyName, setCompanyName] = React.useState("Meu Estabelecimento");
+  const [companySlug, setCompanySlug] = React.useState("minha-loja");
+
   const [selectedType, setSelectedType] = React.useState<"balcao" | "mesa" | "conta" | "delivery">("mesa");
   const [tableNumber, setTableNumber] = React.useState("14");
-  const [attendantName, setAttendantName] = React.useState("Lucas");
+  const [attendantName, setAttendantName] = React.useState("");
   const [qrColor, setQrColor] = React.useState("#0F172A");
   const [qrDataUrl, setQrDataUrl] = React.useState<string>("");
   const [copiedLink, setCopiedLink] = React.useState(false);
   const [batchModalOpen, setBatchModalOpen] = React.useState(false);
   const [batchCount, setBatchCount] = React.useState("20");
 
-  const baseUrl = "https://review14.app/r/cafe-aurora";
+  React.useEffect(() => {
+    async function loadCompany() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: comp } = await supabase
+            .from("Company")
+            .select("tradeName, slug")
+            .eq("ownerId", user.id)
+            .maybeSingle();
+
+          if (comp && comp.slug) {
+            setCompanyName(comp.tradeName || "Meu Estabelecimento");
+            setCompanySlug(comp.slug);
+            return;
+          }
+        }
+
+        if (typeof window !== "undefined") {
+          const stored = localStorage.getItem("review14_current_company");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.tradeName) setCompanyName(parsed.tradeName);
+            if (parsed.slug) setCompanySlug(parsed.slug);
+          }
+        }
+      } catch (err) {
+        console.warn("Erro ao carregar dados da empresa no QR Code:", err);
+      }
+    }
+    loadCompany();
+  }, []);
+
+  const clientOrigin = typeof window !== "undefined"
+    ? window.location.origin.replace(":3002", ":3000")
+    : "http://localhost:3000";
+  const baseUrl = `${clientOrigin}/${companySlug}`;
 
   // Build target URL dynamically
   const currentUrl = React.useMemo(() => {
@@ -268,7 +309,7 @@ export default function QrCodeAndLinksPage() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={qrDataUrl}
-                    alt="QR Code Café Aurora"
+                    alt={`QR Code ${companyName}`}
                     className="w-48 h-48 rounded-xl object-contain"
                   />
                   {/* Center Star Badge Icon */}
@@ -302,7 +343,7 @@ export default function QrCodeAndLinksPage() {
               {qrDataUrl && (
                 <a
                   href={qrDataUrl}
-                  download={`qrcode-cafe-aurora-${selectedType}${selectedType === "mesa" ? `-mesa${tableNumber}` : ""}.png`}
+                  download={`qrcode-${companySlug}-${selectedType}${selectedType === "mesa" ? `-mesa${tableNumber}` : ""}.png`}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] p-2 text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] hover:bg-slate-50 dark:hover:bg-[#1F2937] transition-colors"
                 >
                   <span>📥 Baixar PNG</span>
@@ -333,7 +374,7 @@ export default function QrCodeAndLinksPage() {
                 <div className="h-6 w-6 rounded-md bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
                   ★
                 </div>
-                <span className="font-bold text-slate-900 dark:text-white text-sm">Café Aurora</span>
+                <span className="font-bold text-slate-900 dark:text-white text-sm">{companyName}</span>
               </div>
 
               <div className="space-y-0.5">
