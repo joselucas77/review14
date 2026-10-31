@@ -26,6 +26,8 @@ interface ReviewRecord {
   anonymousName: string | null;
   anonymousAvatar: string | null;
   userId: string | null;
+  merchantReply?: string | null;
+  repliedAt?: string | null;
   createdAt: string;
 }
 
@@ -59,7 +61,7 @@ export default function StoreFeedPage() {
           // 2. Fetch Reviews for this company
           const { data: revData, error: revErr } = await supabase
             .from("Review")
-            .select("id, overallRating, comment, isAnonymous, anonymousName, anonymousAvatar, userId, createdAt")
+            .select("id, overallRating, comment, isAnonymous, anonymousName, anonymousAvatar, userId, merchantReply, repliedAt, createdAt")
             .eq("companyId", compData.id)
             .eq("isPublic", true)
             .order("createdAt", { ascending: false });
@@ -277,6 +279,19 @@ export default function StoreFeedPage() {
                     <p className="text-[12px] italic text-[#94A3B8]">
                       Avaliação sem comentário por escrito.
                     </p>
+                  )}
+
+                  {/* Resposta do Lojista */}
+                  {item.merchantReply && (
+                    <div className="mt-1 rounded-xl bg-blue-50/70 p-3 text-xs border border-blue-100/80 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+                        <span>Resposta de {storeDisplayName}:</span>
+                      </div>
+                      <p className="text-blue-800 m-0 leading-relaxed text-[12px]">
+                        {item.merchantReply}
+                      </p>
+                    </div>
                   )}
                 </CardContent>
               </Card>
