@@ -2,6 +2,19 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const { searchParams, pathname } = request.nextUrl;
+  const code = searchParams.get("code");
+
+  // Se o Supabase redirecionar com ?code=... para a raiz ou outra rota (fallback do Site URL),
+  // encaminha imediatamente para /auth/callback para trocar o código PKCE pela sessão
+  if (code && pathname !== "/auth/callback") {
+    const callbackUrl = new URL("/auth/callback", request.url);
+    callbackUrl.searchParams.set("code", code);
+    const next = searchParams.get("next");
+    if (next) callbackUrl.searchParams.set("next", next);
+    return NextResponse.redirect(callbackUrl);
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -28,9 +41,36 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // IMPORTANT: Avoid writing logic between createServerClient and getUser().
-  // getUser() refreshes the Auth token and validates the JWT.
-  await supabase.auth.getUser();
+  // IMPORTANT: getUser() refreshes the Auth token and validates the JWT.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isAuthRoute = pathname === "/login" || pathname === "/register";
+  const isCallbackRoute = pathname === "/auth/callback";
+
+  // Helper para criar redirect preservando cookies de autenticação atualizados
+  const createRedirectWithCookies = (targetUrl: URL) => {
+    const redirectResponse = NextResponse.redirect(targetUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+    return redirectResponse;
+  };
+
+  // 1. Usuário NÃO autenticado (ou token expirado):
+  // Ao acessar qualquer rota protegida (como a raiz "/" ou painel), redireciona para "/login"
+  if (!user && !isAuthRoute && !isCallbackRoute) {
+    const loginUrl = new URL("/login", request.url);
+    return createRedirectWithCookies(loginUrl);
+  }
+
+  // 2. Usuário JÁ autenticado com token válido:
+  // Ao tentar acessar "/login" ou "/register", redireciona para a raiz "/" (Dashboard)
+  if (user && isAuthRoute) {
+    const dashboardUrl = new URL("/", request.url);
+    return createRedirectWithCookies(dashboardUrl);
+  }
 
   return supabaseResponse;
 }
