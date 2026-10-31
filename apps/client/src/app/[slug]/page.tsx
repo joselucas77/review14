@@ -104,7 +104,17 @@ export default function StoreAuthPage() {
       try {
         const supabase = createClient();
         const origin = window.location.origin;
-        const redirectUrl = `${origin}/auth/callback?next=/${slug}/evaluate`;
+
+        // Armazena a rota de retorno em cookie e localStorage para recuperar no callback
+        if (typeof document !== "undefined") {
+          document.cookie = `review14_eval_next=/${slug}/evaluate; path=/; max-age=600; SameSite=Lax`;
+          try {
+            localStorage.setItem("review14_eval_next", `/${slug}/evaluate`);
+          } catch {}
+        }
+
+        // URL limpa sem query string para compatibilidade exata com o allowlist do Supabase
+        const redirectUrl = `${origin}/auth/callback`;
 
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",

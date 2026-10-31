@@ -5,7 +5,6 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/my-reviews";
 
   const forwardedHost = request.headers.get("x-forwarded-host");
   const isLocalEnv = process.env.NODE_ENV === "development";
@@ -13,8 +12,14 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const cookieStore = cookies();
+    const cookieNext = cookieStore.get("review14_eval_next")?.value;
+    const next = searchParams.get("next") || (cookieNext ? decodeURIComponent(cookieNext) : "/my-reviews");
+
     const targetUrl = new URL(next, hostOrigin);
     const response = NextResponse.redirect(targetUrl);
+
+    // Limpa o cookie de retorno após o uso
+    response.cookies.delete("review14_eval_next");
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://tacrpktefuolrgsnbkej.supabase.co";
     const supabaseAnonKey =

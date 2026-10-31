@@ -17,7 +17,13 @@ export default function LoginPage() {
     if (provider === "google") {
       try {
         const supabase = createClient();
-        const redirectUrl = `${window.location.origin}/auth/callback?next=/my-reviews`;
+        if (typeof document !== "undefined") {
+          document.cookie = `review14_eval_next=/my-reviews; path=/; max-age=600; SameSite=Lax`;
+          try {
+            localStorage.setItem("review14_eval_next", "/my-reviews");
+          } catch {}
+        }
+        const redirectUrl = `${window.location.origin}/auth/callback`;
 
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
