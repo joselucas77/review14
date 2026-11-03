@@ -24,6 +24,7 @@ export default function StoreSelectorPage() {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [stores, setStores] = React.useState<StoreItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [isSearching, setIsSearching] = React.useState(false);
 
   // Busca estabelecimentos ativos no Supabase
   React.useEffect(() => {
@@ -35,7 +36,7 @@ export default function StoreSelectorPage() {
           .from("Company")
           .select("id, slug, tradeName, category, city, state, logoUrl")
           .order("createdAt", { ascending: false })
-          .limit(10);
+          .limit(20);
 
         if (!error && data) {
           setStores(data);
@@ -49,39 +50,95 @@ export default function StoreSelectorPage() {
     loadStores();
   }, []);
 
-  const handleAccessStore = (e: React.FormEvent) => {
+  const handleAccessStore = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
     const raw = storeQuery.trim();
     if (!raw) {
-      setErrorMsg("Digite o identificador (slug) ou link da loja.");
+      setErrorMsg("Digite o nome ou identificador da loja.");
       return;
     }
 
-    // Extrai o slug caso o usuário tenha colado a URL completa
-    let slug = raw;
+    setIsSearching(true);
+
     try {
+      // 1. Extrai o slug caso o usuário tenha colado uma URL completa
+      let potentialSlug = raw;
       if (raw.startsWith("http://") || raw.startsWith("https://")) {
-        const url = new URL(raw);
-        const segments = url.pathname.split("/").filter(Boolean);
-        slug = segments[0] || "";
+        try {
+          const url = new URL(raw);
+          const segments = url.pathname.split("/").filter(Boolean);
+          potentialSlug = segments[0] || "";
+        } catch {}
       } else if (raw.includes("/")) {
         const segments = raw.split("/").filter(Boolean);
-        slug = segments[segments.length - 1];
+        potentialSlug = segments[segments.length - 1];
       }
-    } catch {}
 
-    // Limpa caracteres especiais mantendo padrão de slug
-    slug = slug.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+      const cleanSlug = potentialSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
-    if (!slug) {
-      setErrorMsg("Identificador da loja inválido. Exemplo: tico-teco");
-      return;
+      const supabase = createClient();
+
+      // 2. Busca primeiro por slug exato no banco
+      if (cleanSlug) {
+        const { data: bySlug } = await supabase
+          .from("Company")
+          .select("slug")
+          .eq("slug", cleanSlug)
+          .maybeSingle();
+
+        if (bySlug?.slug) {
+          router.push(`/${bySlug.slug}`);
+          return;
+        }
+      }
+
+      // 3. Busca por Nome Fantasia aproximado (ex: "Café Aurora")
+      const { data: byName } = await supabase
+        .from("Company")
+        .select("slug")
+        .ilike("tradeName", `%${raw}%`)
+        .order("createdAt", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (byName?.slug) {
+        router.push(`/${byName.slug}`);
+        return;
+      }
+
+      // 4. Se não encontrou nem por slug nem por nome, tenta navegar para o slug digitado
+      if (cleanSlug) {
+        router.push(`/${cleanSlug}`);
+      } else {
+        setErrorMsg("Identificador da loja inválido. Exemplo: cafe-aurora");
+      }
+    } catch (err) {
+      console.warn("Erro ao buscar loja:", err);
+      const cleanSlug = raw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+      if (cleanSlug) {
+        router.push(`/${cleanSlug}`);
+      }
+    } finally {
+      setIsSearching(false);
     }
-
-    router.push(`/${slug}`);
   };
+
+  // Filtro dinâmico na lista de lojas abaixo
+  const filteredStores = React.useMemo(() => {
+    if (!storeQuery.trim()) return stores;
+    const q = storeQuery.toLowerCase().trim();
+    return stores.filter(
+      (s) =>
+        s.tradeName.toLowerCase().includes(q) ||
+        s.slug.toLowerCase().includes(q) ||
+        (s.category && s.category.toLowerCase().includes(q))
+    );
+  }, [stores, storeQuery]);
+
+  const tenantUrl =
+    process.env.NEXT_PUBLIC_TENANT_URL || "https://tenant-review14.vercel.app";
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-[#F8FAFC] px-5 py-8 text-[#0F172A] antialiased">
@@ -107,7 +164,7 @@ export default function StoreSelectorPage() {
             <form onSubmit={handleAccessStore} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5 text-left">
                 <label htmlFor="store-input" className="text-[13px] font-semibold text-[#0F172A]">
-                  Link ou identificador da loja (slug):
+                  Nome ou identificador da loja (slug):
                 </label>
                 <div className="relative flex items-center">
                   <div className="pointer-events-none absolute left-3 flex items-center text-slate-400">
@@ -133,7 +190,7 @@ export default function StoreSelectorPage() {
                       setStoreQuery(e.target.value);
                       if (errorMsg) setErrorMsg(null);
                     }}
-                    placeholder="Ex: tico-teco ou link da loja"
+                    placeholder="Ex: cafe-aurora ou Café Aurora"
                     className="w-full rounded-[10px] border border-[#CBD5E1] bg-slate-50/60 py-2.5 pl-9 pr-3 text-[14px] text-[#0F172A] placeholder-slate-400 transition focus:border-[#2563EB] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
                   />
                 </div>
@@ -146,11 +203,12 @@ export default function StoreSelectorPage() {
 
               <Button
                 type="submit"
+                disabled={isSearching}
                 size="lg"
                 fullWidth
-                className="gap-2 font-semibold shadow-xs"
+                className="gap-2 font-semibold shadow-xs bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
               >
-                <span>Acessar Loja para Avaliar</span>
+                <span>{isSearching ? "Buscando Loja..." : "Acessar Loja para Avaliar"}</span>
                 <svg
                   width="16"
                   height="16"
@@ -175,7 +233,7 @@ export default function StoreSelectorPage() {
               Lojas Disponíveis
             </span>
             <span className="text-[11px] text-[#94A3B8]">
-              {stores.length} encontrada{stores.length === 1 ? "" : "s"}
+              {filteredStores.length} encontrada{filteredStores.length === 1 ? "" : "s"}
             </span>
           </div>
 
@@ -188,18 +246,19 @@ export default function StoreSelectorPage() {
                 />
               ))}
             </div>
-          ) : stores.length > 0 ? (
+          ) : filteredStores.length > 0 ? (
             <div className="flex flex-col gap-2">
-              {stores.map((s) => (
+              {filteredStores.map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => router.push(`/${s.slug}`)}
                   className="flex w-full items-center justify-between rounded-xl border border-[#E2E8F0] bg-white p-3 text-left shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition hover:border-[#2563EB] hover:bg-blue-50/30 active:scale-[0.99] cursor-pointer"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-blue-600 font-bold overflow-hidden">
                       {s.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={s.logoUrl}
                           alt={s.tradeName}
@@ -209,17 +268,17 @@ export default function StoreSelectorPage() {
                         <span>{s.tradeName.charAt(0).toUpperCase()}</span>
                       )}
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-[14px] font-semibold text-[#0F172A]">
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[14px] font-semibold text-[#0F172A] truncate">
                         {s.tradeName}
                       </span>
-                      <span className="text-[11px] font-mono text-[#64748B]">
-                        /{s.slug}
+                      <span className="text-[11px] font-mono text-[#64748B] truncate">
+                        /{s.slug} {s.city ? `• ${s.city}` : ""}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 text-[12px] font-semibold text-blue-600">
+                  <div className="flex items-center gap-1 text-[12px] font-semibold text-blue-600 shrink-0">
                     <span>Avaliar</span>
                     <svg
                       width="14"
@@ -237,7 +296,9 @@ export default function StoreSelectorPage() {
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center text-xs text-slate-500">
-              Nenhuma loja cadastrada no momento. Solicite o link ou QR Code no estabelecimento.
+              {storeQuery
+                ? `Nenhuma loja encontrada para "${storeQuery}".`
+                : "Nenhuma loja cadastrada no momento. Solicite o link ou QR Code no estabelecimento."}
             </div>
           )}
         </div>
@@ -267,7 +328,7 @@ export default function StoreSelectorPage() {
         <div className="pt-2 text-center text-[12px] text-slate-500">
           <span>Você é dono de uma loja? </span>
           <a
-            href="https://tenant-review14.vercel.app"
+            href={tenantUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold text-blue-600 hover:underline"

@@ -54,6 +54,23 @@ export default function EvaluatePage() {
   const [fieldMultiSelect, setFieldMultiSelect] = React.useState<Record<string, string[]>>({});
   const [fieldText, setFieldText] = React.useState<Record<string, string>>({});
 
+  // Contextual QR Code params (table, attendant, origin)
+  const [tableParam, setTableParam] = React.useState<string>("");
+  const [attendantParam, setAttendantParam] = React.useState<string>("");
+  const [originParam, setOriginParam] = React.useState<string>("");
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const m = urlParams.get("mesa") || sessionStorage.getItem("review_param_mesa") || "";
+      const g = urlParams.get("garcom") || sessionStorage.getItem("review_param_garcom") || "";
+      const o = urlParams.get("origem") || sessionStorage.getItem("review_param_origem") || "";
+      setTableParam(m);
+      setAttendantParam(g);
+      setOriginParam(o);
+    }
+  }, []);
+
   // Photos
   const [selectedPhotos, setSelectedPhotos] = React.useState<
     { id: string; file: File; previewUrl: string }[]
@@ -387,6 +404,52 @@ export default function EvaluatePage() {
             }
           }
         }
+
+        // 4. Integração com o CRM do Lojista (CustomerLead)
+        if (!isAnon && authUser.userId) {
+          try {
+            const originNotes = [
+              tableParam ? `Mesa ${tableParam}` : null,
+              attendantParam ? `Atendente: ${attendantParam}` : null,
+              originParam ? `Origem: ${originParam}` : null,
+            ]
+              .filter(Boolean)
+              .join(" • ");
+
+            // Verifica se este cliente já tem registro de lead para esta loja
+            const { data: existingLead } = await supabase
+              .from("CustomerLead")
+              .select("id, totalReviews, notes")
+              .eq("companyId", company.id)
+              .eq("userId", authUser.userId)
+              .maybeSingle();
+
+            if (existingLead) {
+              await supabase
+                .from("CustomerLead")
+                .update({
+                  totalReviews: (Number(existingLead.totalReviews) || 1) + 1,
+                  notes: originNotes || existingLead.notes || null,
+                  lastVisitedAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                })
+                .eq("id", existingLead.id);
+            } else {
+              await supabase.from("CustomerLead").insert({
+                id: crypto.randomUUID(),
+                companyId: company.id,
+                userId: authUser.userId,
+                totalReviews: 1,
+                marketingOptIn: true,
+                notes: originNotes || null,
+                lastVisitedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          } catch (leadSyncErr) {
+            console.warn("Aviso ao registrar lead no CRM:", leadSyncErr);
+          }
+        }
       }
 
       // 3. Save to sessionStorage for Thanks page
@@ -475,6 +538,21 @@ export default function EvaluatePage() {
               {company?.city ? ` • ${company.city}` : ""}
               {company?.state ? `, ${company.state}` : ""}
             </div>
+
+            {(tableParam || attendantParam) && (
+              <div className="flex items-center gap-1.5 pt-0.5">
+                {tableParam && (
+                  <span className="rounded-full bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 text-[11px] font-bold">
+                    🪑 Mesa {tableParam}
+                  </span>
+                )}
+                {attendantParam && (
+                  <span className="rounded-full bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-0.5 text-[11px] font-medium">
+                    👤 {attendantParam}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-1 pt-1">

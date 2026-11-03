@@ -13,39 +13,35 @@ export default function LoginPage() {
   const [isEmailView, setIsEmailView] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  const handleOAuth = async (provider: "google" | "apple") => {
+  const handleGoogleLogin = async () => {
     setErrorMsg(null);
-    if (provider === "google") {
-      try {
-        const supabase = createClient();
-        if (typeof document !== "undefined") {
-          document.cookie = `review14_eval_next=/my-reviews; path=/; max-age=600; SameSite=Lax`;
-          try {
-            localStorage.setItem("review14_eval_next", "/my-reviews");
-          } catch {}
-        }
-        const redirectUrl = `${window.location.origin}/auth/callback`;
-
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: redirectUrl,
-            queryParams: {
-              access_type: "offline",
-              prompt: "consent",
-            },
-          },
-        });
-
-        if (error) {
-          setErrorMsg(error.message || "Erro ao conectar com Google.");
-        }
-      } catch (err: any) {
-        console.error("Erro no login Google:", err);
-        setErrorMsg("Não foi possível conectar com o Google.");
+    try {
+      const supabase = createClient();
+      if (typeof document !== "undefined") {
+        document.cookie = `review14_eval_next=/my-reviews; path=/; max-age=600; SameSite=Lax`;
+        try {
+          localStorage.setItem("review14_eval_next", "/my-reviews");
+        } catch {}
       }
-    } else {
-      toast.info("Autenticação com Apple em desenvolvimento.");
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+
+      if (error) {
+        setErrorMsg(error.message || "Erro ao conectar com Google.");
+      }
+    } catch (err: any) {
+      console.error("Erro no login Google:", err);
+      setErrorMsg("Não foi possível conectar com o Google.");
     }
   };
 
@@ -84,8 +80,7 @@ export default function LoginPage() {
           <>
             <LogoBadge icon="star" />
             <LoginOptionsCard
-              onSelectGoogle={() => handleOAuth("google")}
-              onSelectApple={() => handleOAuth("apple")}
+              onSelectGoogle={handleGoogleLogin}
               onSelectEmail={() => setIsEmailView(true)}
               onGoToRegister={() => router.push("/register")}
             />

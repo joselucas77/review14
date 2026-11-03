@@ -75,6 +75,14 @@ export default function StoreAuthPage() {
           setStoreData(data);
           if (typeof window !== "undefined") {
             sessionStorage.setItem("current_company", JSON.stringify(data));
+            // Preserva parâmetros de QR code (mesa, garçom, origem) para o formulário
+            const urlParams = new URLSearchParams(window.location.search);
+            const mesa = urlParams.get("mesa");
+            const garcom = urlParams.get("garcom");
+            const origem = urlParams.get("origem");
+            if (mesa) sessionStorage.setItem("review_param_mesa", mesa);
+            if (garcom) sessionStorage.setItem("review_param_garcom", garcom);
+            if (origem) sessionStorage.setItem("review_param_origem", origem);
           }
         }
       } catch (err) {
@@ -98,46 +106,51 @@ export default function StoreAuthPage() {
       .join(" ");
   }, [storeData?.tradeName, slug]);
 
-  const handleOAuth = async (provider: "google" | "apple") => {
-    if (provider === "google") {
-      try {
-        const supabase = createClient();
-        const origin = window.location.origin;
+  const handleGoogleLogin = async () => {
+    try {
+      const supabase = createClient();
+      const origin = window.location.origin;
 
-        // Armazena a rota de retorno em cookie e localStorage para recuperar no callback
-        if (typeof document !== "undefined") {
-          document.cookie = `review14_eval_next=/${slug}/evaluate; path=/; max-age=600; SameSite=Lax`;
-          try {
-            localStorage.setItem("review14_eval_next", `/${slug}/evaluate`);
-          } catch {}
-        }
-
-        // URL limpa sem query string para compatibilidade exata com o allowlist do Supabase
-        const redirectUrl = `${origin}/auth/callback`;
-
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: redirectUrl,
-            queryParams: {
-              access_type: "offline",
-              prompt: "consent",
-            },
-          },
-        });
-
-        if (error) {
-          console.error("Erro no login Google:", error);
-          toast.error(error.message || "Erro ao conectar com Google.");
-        }
-      } catch (err: any) {
-        console.error("Erro no login Google:", err);
-        toast.error("Não foi possível conectar com o Google.");
+      // Armazena a rota de retorno em cookie e localStorage para recuperar no callback
+      if (typeof document !== "undefined") {
+        document.cookie = `review14_eval_next=/${slug}/evaluate; path=/; max-age=600; SameSite=Lax`;
+        try {
+          localStorage.setItem("review14_eval_next", `/${slug}/evaluate`);
+        } catch {}
       }
-    } else {
-      toast.info("Autenticação com Apple em desenvolvimento.");
+
+      // URL limpa sem query string para compatibilidade exata com o allowlist do Supabase
+      const redirectUrl = `${origin}/auth/callback`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+
+      if (error) {
+        console.error("Erro no login Google:", error);
+        toast.error(error.message || "Erro ao conectar com Google.");
+      }
+    } catch (err: any) {
+      console.error("Erro no login Google:", err);
+      toast.error("Não foi possível conectar com o Google.");
     }
   };
+
+  const getEvaluateUrl = () => {
+    if (typeof window !== "undefined" && window.location.search) {
+      return `/${slug}/evaluate${window.location.search}`;
+    }
+    return `/${slug}/evaluate`;
+  };
+
+  const handleOAuth = () => {}; // mantido para compatibilidade se necessário
 
   const handleEmailSubmit = async (data: { email: string; password: string }) => {
     try {
@@ -170,7 +183,7 @@ export default function StoreAuthPage() {
         );
       }
       toast.success("Login realizado com sucesso!");
-      router.push(`/${slug}/evaluate`);
+      router.push(getEvaluateUrl());
     } catch (err: any) {
       console.error("Erro no login:", err);
       toast.error("Ocorreu um erro ao fazer login.");
@@ -213,7 +226,7 @@ export default function StoreAuthPage() {
         );
       }
       toast.success("Conta criada com sucesso!");
-      router.push(`/${slug}/evaluate`);
+      router.push(getEvaluateUrl());
     } catch (err: any) {
       console.error("Erro no cadastro:", err);
       toast.error("Ocorreu um erro ao realizar cadastro.");
@@ -234,7 +247,7 @@ export default function StoreAuthPage() {
         })
       );
     }
-    router.push(`/${slug}/evaluate`);
+    router.push(getEvaluateUrl());
   };
 
   const handleSignOut = async () => {
@@ -261,7 +274,7 @@ export default function StoreAuthPage() {
         })
       );
     }
-    router.push(`/${slug}/evaluate`);
+    router.push(getEvaluateUrl());
   };
 
   return (
@@ -306,8 +319,7 @@ export default function StoreAuthPage() {
 
                 {/* Cartão com Opções de Login */}
                 <LoginOptionsCard
-                  onSelectGoogle={() => handleOAuth("google")}
-                  onSelectApple={() => handleOAuth("apple")}
+                  onSelectGoogle={handleGoogleLogin}
                   onSelectEmail={() => setMode("email")}
                   onGoToRegister={() => setMode("register")}
                   onContinueAsGuest={handleGuestContinue}
