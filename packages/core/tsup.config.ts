@@ -10,8 +10,7 @@ export default defineConfig({
   treeshake: true,
   external: [
     "@prisma/client",
-    "@neondatabase/serverless",
-    "@prisma/adapter-neon",
+    "@supabase/supabase-js",
     "stripe",
   ],
 });

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const reviewMediaInputSchema = z.object({
   url: z.string().url("URL do arquivo inválida"),
-  fileKey: z.string().min(1, "Chave do arquivo R2 obrigatória"),
+  fileKey: z.string().min(1, "Chave do arquivo obrigatória").optional().default(""),
   type: z.enum(["IMAGE", "VIDEO"]).default("IMAGE"),
   sizeBytes: z.number().int().positive().optional(),
 });
@@ -29,7 +29,7 @@ export const createReviewSchema = z.object({
   anonymousAvatar: z.string().optional(),
   userId: z.string().optional(),
   
-  // Mídias (Fotos/Vídeos do R2)
+  // Mídias (Fotos/Vídeos do Supabase Storage)
   media: z.array(reviewMediaInputSchema).max(6, "Máximo de 6 mídias").optional().default([]),
   
   // Respostas aos campos PRO adicionais

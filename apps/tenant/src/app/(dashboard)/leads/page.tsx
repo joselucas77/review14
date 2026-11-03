@@ -9,6 +9,8 @@ interface LeadItem {
   name: string;
   email: string;
   phone: string;
+  city?: string | null;
+  state?: string | null;
   totalVisits: number;
   lastVisited: string;
   optIn: boolean;
@@ -26,7 +28,9 @@ export default function LeadsCrmPage() {
       try {
         setLoading(true);
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) {
           setLoading(false);
           return;
@@ -48,50 +52,92 @@ export default function LeadsCrmPage() {
 
         setCompanyName(comp.tradeName || "Minha Loja");
 
-        // 2. Busca avaliações da empresa
-        const { data: revs, error } = await supabase
-          .from("Review")
+        // 2. Busca leads reais da tabela CustomerLead
+        const { data: dbLeads, error: leadsErr } = await supabase
+          .from("CustomerLead")
           .select(`
             id,
-            overallRating,
-            isAnonymous,
-            anonymousName,
+            companyId,
             userId,
-            createdAt
+            marketingOptIn,
+            totalReviews,
+            notes,
+            lastVisitedAt,
+            createdAt,
+            user:User (
+              id,
+              name,
+              email,
+              avatarUrl,
+              phone,
+              city,
+              state
+            )
           `)
+          .eq("companyId", comp.id)
+          .order("lastVisitedAt", { ascending: false });
+
+        const mappedList: LeadItem[] = [];
+        const seenKeys = new Set<string>();
+
+        if (!leadsErr && dbLeads && dbLeads.length > 0) {
+          dbLeads.forEach((dl: any) => {
+            const u = dl.user;
+            const key = dl.userId || dl.id;
+            seenKeys.add(key);
+
+            const date = new Date(dl.lastVisitedAt || dl.createdAt);
+            const formattedDate = date.toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            mappedList.push({
+              id: dl.id,
+              name: u?.name || "Cliente Verificado",
+              email: u?.email || "Sem e-mail cadastrado",
+              phone: u?.phone || "",
+              city: u?.city || null,
+              state: u?.state || null,
+              totalVisits: Number(dl.totalReviews) || 1,
+              lastVisited: formattedDate,
+              optIn: dl.marketingOptIn !== false,
+              origin: "QR Code Salão / Mesa",
+            });
+          });
+        }
+
+        // 3. Fallback complementar: Avaliações que ainda não tinham CustomerLead gerado
+        const { data: revs } = await supabase
+          .from("Review")
+          .select("id, overallRating, isAnonymous, anonymousName, userId, createdAt")
           .eq("companyId", comp.id)
           .order("createdAt", { ascending: false });
 
-        if (!error && revs) {
-          // Agrupa por cliente
-          const map = new Map<string, {
-            name: string;
-            visits: number;
-            lastDate: string;
-            userId: string | null;
-          }>();
+        if (revs && revs.length > 0) {
+          const fallbackMap = new Map<string, { name: string; visits: number; lastDate: string }>();
 
           revs.forEach((r: any) => {
-            const key = r.userId || r.anonymousName || "Cliente Anônimo";
-            const name = r.anonymousName || "Cliente Verificado";
-            const existing = map.get(key);
+            if (r.userId && seenKeys.has(r.userId)) {
+              return; // Já listado no CustomerLead
+            }
+            const name = r.isAnonymous ? r.anonymousName || "Cliente Anônimo" : r.anonymousName || "Cliente Presencial";
+            const key = r.userId || `anon_${name}`;
+            const existing = fallbackMap.get(key);
             if (existing) {
               existing.visits += 1;
               if (new Date(r.createdAt) > new Date(existing.lastDate)) {
                 existing.lastDate = r.createdAt;
               }
             } else {
-              map.set(key, {
-                name,
-                visits: 1,
-                lastDate: r.createdAt,
-                userId: r.userId || null,
-              });
+              fallbackMap.set(key, { name, visits: 1, lastDate: r.createdAt });
             }
           });
 
-          // Se tiver userId, busca dados do usuário
-          const mappedLeads: LeadItem[] = Array.from(map.entries()).map(([key, val], idx) => {
+          fallbackMap.forEach((val, key) => {
             const date = new Date(val.lastDate);
             const formattedDate = date.toLocaleDateString("pt-BR", {
               day: "2-digit",
@@ -101,20 +147,20 @@ export default function LeadsCrmPage() {
               minute: "2-digit",
             });
 
-            return {
-              id: `lead_${idx + 1}`,
+            mappedList.push({
+              id: key,
               name: val.name,
-              email: val.userId ? "Identificado via Google" : "Avaliação Presencial",
-              phone: "—",
+              email: key.startsWith("anon_") ? "Avaliação sem cadastro" : "Cliente Verificado",
+              phone: "",
               totalVisits: val.visits,
               lastVisited: formattedDate,
               optIn: true,
               origin: "QR Code Salão",
-            };
+            });
           });
-
-          setLeads(mappedLeads);
         }
+
+        setLeads(mappedList);
       } catch (err) {
         console.error("Erro ao carregar leads:", err);
       } finally {
@@ -128,11 +174,11 @@ export default function LeadsCrmPage() {
   const handleExportCsv = () => {
     const csvContent =
       "data:text/csv;charset=utf-8," +
-      ["Nome,E-mail / Tipo,Telefone,Total de Visitas,Última Visita,Origem,OptIn Marketing"]
+      ["Nome,E-mail,Telefone,Cidade,UF,Total de Visitas,Última Visita,Origem,OptIn Marketing"]
         .concat(
           leads.map(
             (l) =>
-              `"${l.name}","${l.email}","${l.phone}",${l.totalVisits},"${l.lastVisited}","${l.origin}",${l.optIn ? "Sim" : "Nao"}`
+              `"${l.name}","${l.email}","${l.phone || ""}","${l.city || ""}","${l.state || ""}",${l.totalVisits},"${l.lastVisited}","${l.origin}",${l.optIn ? "Sim" : "Nao"}`
           )
         )
         .join("\n");
@@ -158,6 +204,10 @@ export default function LeadsCrmPage() {
   });
 
   const totalContacts = leads.length;
+  const recurringCount = leads.filter((l) => l.totalVisits > 1).length;
+  const recurringRate = totalContacts > 0 ? ((recurringCount / totalContacts) * 100).toFixed(0) : "0";
+  const optInCount = leads.filter((l) => l.optIn).length;
+  const optInRate = totalContacts > 0 ? ((optInCount / totalContacts) * 100).toFixed(0) : "100";
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-6 md:p-8 select-none transition-colors duration-200">
@@ -174,7 +224,7 @@ export default function LeadsCrmPage() {
             </span>
           </div>
           <p className="text-[13px] leading-4 text-[#64748B] dark:text-[#94A3B8] m-0">
-            Cada cliente que se identifica para avaliar entra automaticamente na sua base de contatos para fidelização e campanhas.
+            Cada cliente que se identifica para avaliar entra automaticamente na sua base de contatos para fidelização e pós-venda.
           </p>
         </div>
 
@@ -196,7 +246,7 @@ export default function LeadsCrmPage() {
         </div>
       </div>
 
-      {/* 4 Mini KPI Cards */}
+      {/* 4 Mini KPI Cards Reais */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Leads Totais */}
         <div className="flex flex-col justify-between rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] p-4 shadow-xs">
@@ -237,10 +287,10 @@ export default function LeadsCrmPage() {
           </div>
           <div className="flex items-baseline gap-2 pt-2">
             <span className="text-[24px] font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC]">
-              {loading ? "..." : leads.filter((l) => l.totalVisits > 1).length}
+              {loading ? "..." : recurringCount}
             </span>
             <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400">
-              fidelizados
+              {recurringRate}% fidelizados
             </span>
           </div>
         </div>
@@ -270,11 +320,11 @@ export default function LeadsCrmPage() {
           </div>
         </div>
 
-        {/* Card 4: Retenção */}
+        {/* Card 4: Opt-In de Marketing */}
         <div className="flex flex-col justify-between rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-[12px] font-medium text-[#64748B] dark:text-[#94A3B8]">
-              Permissão de Contato
+              Permissão de Contato (Opt-in)
             </span>
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -284,10 +334,10 @@ export default function LeadsCrmPage() {
           </div>
           <div className="flex items-baseline gap-2 pt-2">
             <span className="text-[24px] font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC]">
-              100%
+              {loading ? "..." : `${optInRate}%`}
             </span>
             <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-              LGPD em conformidade
+              {optInCount} autorizados
             </span>
           </div>
         </div>
@@ -302,7 +352,7 @@ export default function LeadsCrmPage() {
           </svg>
           <input
             type="text"
-            placeholder="Buscar por nome do cliente..."
+            placeholder="Buscar por nome, e-mail ou telefone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full border-none bg-transparent text-[13px] text-[#0F172A] dark:text-[#F8FAFC] placeholder-slate-400 outline-none"
@@ -319,54 +369,81 @@ export default function LeadsCrmPage() {
         </div>
       </div>
 
-      {/* Tabela de Contatos */}
+      {/* Tabela de Contatos Reais */}
       <div className="rounded-2xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
             <thead className="bg-[#F8FAFC] dark:bg-[#1F2937]/70 text-[11px] uppercase font-bold tracking-wider text-[#64748B] dark:text-[#94A3B8] border-b border-[#E2E8F0] dark:border-[#1F2937]">
               <tr>
                 <th className="px-6 py-3.5">Cliente</th>
-                <th className="px-6 py-3.5">Tipo de Acesso</th>
-                <th className="px-6 py-3.5">Avaliações Feitas</th>
-                <th className="px-6 py-3.5">Última Avaliação</th>
-                <th className="px-6 py-3.5">Canal</th>
-                <th className="px-6 py-3.5 text-center">Status</th>
+                <th className="px-6 py-3.5">E-mail</th>
+                <th className="px-6 py-3.5">Telefone / WhatsApp</th>
+                <th className="px-6 py-3.5">Visitas</th>
+                <th className="px-6 py-3.5">Última Presença</th>
+                <th className="px-6 py-3.5 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#1F2937]">
-              {filteredLeads.map((l) => (
-                <tr key={l.id} className="hover:bg-slate-50/70 dark:hover:bg-[#1F2937]/40 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-xs font-bold">
-                        {l.name.slice(0, 2).toUpperCase()}
+              {filteredLeads.map((l) => {
+                const cleanPhone = l.phone ? l.phone.replace(/\D/g, "") : "";
+                const hasPhone = cleanPhone.length >= 10;
+                const waUrl = hasPhone
+                  ? `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(
+                      `Olá ${l.name}! Agradecemos por sua visita ao ${companyName || "nosso estabelecimento"}.`
+                    )}`
+                  : null;
+
+                return (
+                  <tr key={l.id} className="hover:bg-slate-50/70 dark:hover:bg-[#1F2937]/40 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-xs font-bold">
+                          {l.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F8FAFC] block">
+                            {l.name}
+                          </span>
+                          {l.city && (
+                            <span className="text-[11px] text-slate-400">
+                              {l.city}{l.state ? ` - ${l.state}` : ""}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <span className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F8FAFC]">
-                        {l.name}
+                    </td>
+                    <td className="px-6 py-4 text-[13px] text-[#475569] dark:text-[#CBD5E1]">
+                      {l.email}
+                    </td>
+                    <td className="px-6 py-4 text-[13px] text-[#475569] dark:text-[#CBD5E1]">
+                      {l.phone || "—"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold px-2.5 py-0.5 text-[11px]">
+                        {l.totalVisits} {l.totalVisits === 1 ? "visita" : "visitas"}
                       </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-[13px] text-[#475569] dark:text-[#CBD5E1]">
-                    {l.email}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold px-2.5 py-0.5 text-[11px]">
-                      {l.totalVisits} {l.totalVisits === 1 ? "avaliação" : "avaliações"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    {l.lastVisited}
-                  </td>
-                  <td className="px-6 py-4 text-xs font-medium text-[#475569] dark:text-[#CBD5E1]">
-                    {l.origin}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50">
-                      ✓ Ativo
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                      {l.lastVisited}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      {waUrl ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white transition-colors shadow-xs"
+                          title="Iniciar conversa no WhatsApp"
+                        >
+                          <span>💬 WhatsApp</span>
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredLeads.length === 0 && (
                 <tr>

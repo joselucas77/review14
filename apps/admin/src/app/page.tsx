@@ -10,7 +10,7 @@ export default function AdminDashboardPage() {
     basicSubscribers: 52,
     totalReviewsCaptured: 34820,
     googleRedirectsCount: 29400,
-    dbStatus: "Healthy (Neon Serverless US-East)",
+    dbStatus: "Healthy (Supabase PostgreSQL)",
     dbLatency: "24ms",
   };
 
@@ -71,7 +71,7 @@ export default function AdminDashboardPage() {
 
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Banco de Dados Neon
+            Banco de Dados Supabase
           </span>
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />

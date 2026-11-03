@@ -55,7 +55,10 @@ function formatRelativeTime(dateString: string): string {
     if (diffMins < 1) return "Agora mesmo";
     if (diffMins < 60) return `Há ${diffMins} min`;
     if (diffHours < 24) {
-      const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = date.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
       return `Hoje às ${timeStr}`;
     }
     return date.toLocaleDateString("pt-BR", {
@@ -83,18 +86,26 @@ export default function ReviewsPage() {
   const [loading, setLoading] = React.useState(true);
 
   const [search, setSearch] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<"all" | "5star" | "4star" | "retained" | "unreplied">("all");
-  const [sortBy, setSortBy] = React.useState<"recent" | "highest" | "lowest">("recent");
+  const [activeTab, setActiveTab] = React.useState<
+    "all" | "5star" | "4star" | "retained" | "unreplied"
+  >("all");
+  const [sortBy, setSortBy] = React.useState<"recent" | "highest" | "lowest">(
+    "recent",
+  );
   const [replyingId, setReplyingId] = React.useState<string | null>(null);
   const [replyInput, setReplyInput] = React.useState("");
   const [isSavingReply, setIsSavingReply] = React.useState(false);
-  const [copiedReviewId, setCopiedReviewId] = React.useState<string | null>(null);
+  const [copiedReviewId, setCopiedReviewId] = React.useState<string | null>(
+    null,
+  );
 
   // Carrega empresa ativa e avaliações do Supabase
   const loadData = React.useCallback(async () => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         setLoading(false);
         return;
@@ -119,7 +130,8 @@ export default function ReviewsPage() {
       // 2. Busca todas as avaliações da empresa com respostas customizadas e mídias
       const { data: revData, error: revErr } = await supabase
         .from("Review")
-        .select(`
+        .select(
+          `
           id,
           overallRating,
           comment,
@@ -133,6 +145,12 @@ export default function ReviewsPage() {
           merchantReply,
           repliedAt,
           createdAt,
+          user:User (
+            id,
+            name,
+            email,
+            phone
+          ),
           CustomAnswer (
             id,
             ratingValue,
@@ -150,7 +168,8 @@ export default function ReviewsPage() {
             fileKey,
             type
           )
-        `)
+        `,
+        )
         .eq("companyId", comp.id)
         .order("createdAt", { ascending: false });
 
@@ -161,8 +180,9 @@ export default function ReviewsPage() {
         const mapped: ReviewItem[] = revData.map((r: any) => {
           const customerName = r.isAnonymous
             ? r.anonymousName || "Cliente Anônimo"
-            : r.anonymousName || "Cliente Verificado";
+            : r.user?.name || r.anonymousName || "Cliente Verificado";
           const isPromoter = (r.overallRating || 0) >= minRating;
+          const phone = r.user?.phone || undefined;
 
           return {
             id: r.id,
@@ -181,6 +201,7 @@ export default function ReviewsPage() {
             replyDate: r.repliedAt ? formatRelativeTime(r.repliedAt) : null,
             answers: Array.isArray(r.CustomAnswer) ? r.CustomAnswer : [],
             media: Array.isArray(r.ReviewMedia) ? r.ReviewMedia : [],
+            phone,
           };
         });
 
@@ -209,7 +230,7 @@ export default function ReviewsPage() {
         },
         () => {
           loadData();
-        }
+        },
       )
       .subscribe();
 
@@ -254,8 +275,8 @@ export default function ReviewsPage() {
                 replyText,
                 replyDate: "Agora mesmo",
               }
-            : r
-        )
+            : r,
+        ),
       );
 
       setReplyingId(null);
@@ -265,22 +286,6 @@ export default function ReviewsPage() {
       toast.error("Ocorreu um erro ao salvar a resposta.");
     } finally {
       setIsSavingReply(false);
-    }
-  };
-
-  // Sugestão com IA contextualizada com o nome da loja
-  const handleAiSuggest = (review: ReviewItem) => {
-    const storeName = company?.tradeName || "Nosso Estabelecimento";
-    const firstName = review.customerName.split(" ")[0];
-
-    if (review.rating >= 4) {
-      setReplyInput(
-        `Olá ${firstName}! Que alegria ler sua avaliação tão carinhosa sobre sua experiência na ${storeName}. Nossa equipe se dedica diariamente para oferecer o melhor atendimento e qualidade. Esperamos te receber novamente em breve!`
-      );
-    } else {
-      setReplyInput(
-        `Olá ${firstName}, lamentamos sinceramente por não termos superado suas expectativas desta vez. Na ${storeName}, prezamos muito pelo padrão do nosso serviço. Seus apontamentos já foram repassados diretamente à nossa gerência para os devidos ajustes. Gostaríamos muito de uma nova oportunidade para lhe proporcionar uma experiência impecável!`
-      );
     }
   };
 
@@ -298,7 +303,9 @@ export default function ReviewsPage() {
     const storeName = company?.tradeName || "estabelecimento";
     const csvContent =
       "data:text/csv;charset=utf-8," +
-      ["ID,Cliente,Nota,Triagem,Data,Comentario,Resposta do Lojista,Respondido Em"]
+      [
+        "ID,Cliente,Nota,Triagem,Data,Comentario,Resposta do Lojista,Respondido Em",
+      ]
         .concat(
           reviews.map(
             (r) =>
@@ -306,15 +313,18 @@ export default function ReviewsPage() {
                 r.isPromoter ? "Triado para Google" : "Retido na Ouvidoria"
               }","${r.createdAt}","${(r.comment || "").replace(/"/g, '""')}","${(
                 r.replyText || ""
-              ).replace(/"/g, '""')}","${r.replyDate || ""}"`
-          )
+              ).replace(/"/g, '""')}","${r.replyDate || ""}"`,
+          ),
         )
         .join("\n");
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `avaliacoes-${company?.slug || "review14"}.csv`);
+    link.setAttribute(
+      "download",
+      `avaliacoes-${company?.slug || "review14"}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -323,9 +333,11 @@ export default function ReviewsPage() {
   // KPIs calculados com dados reais do Supabase
   const totalCount = reviews.length;
   const promotersCount = reviews.filter((r) => r.isPromoter).length;
-  const promoterRate = totalCount > 0 ? ((promotersCount / totalCount) * 100).toFixed(1) : "0.0";
+  const promoterRate =
+    totalCount > 0 ? ((promotersCount / totalCount) * 100).toFixed(1) : "0.0";
   const retainedCount = reviews.filter((r) => !r.isPromoter).length;
-  const retainedRate = totalCount > 0 ? ((retainedCount / totalCount) * 100).toFixed(1) : "0.0";
+  const retainedRate =
+    totalCount > 0 ? ((retainedCount / totalCount) * 100).toFixed(1) : "0.0";
   const unrepliedCount = reviews.filter((r) => !r.replied).length;
 
   // Filtragem
@@ -338,7 +350,7 @@ export default function ReviewsPage() {
         (a) =>
           a.CustomField?.label.toLowerCase().includes(q) ||
           a.textValue?.toLowerCase().includes(q) ||
-          a.selectedItems?.some((item) => item.toLowerCase().includes(q))
+          a.selectedItems?.some((item) => item.toLowerCase().includes(q)),
       );
       if (!matchName && !matchComment && !matchAnswers) return false;
     }
@@ -372,7 +384,8 @@ export default function ReviewsPage() {
             </span>
           </div>
           <p className="text-[13px] leading-4 text-[#64748B] dark:text-[#94A3B8] m-0">
-            Acompanhe em tempo real as avaliações dos clientes, respostas e triagem automática para o Google Maps.
+            Acompanhe em tempo real as avaliações dos clientes, respostas e
+            triagem automática para o Google Maps.
           </p>
         </div>
 
@@ -381,8 +394,7 @@ export default function ReviewsPage() {
             href={getClientStoreUrl(company?.slug)}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] px-3.5 py-2 text-[13px] font-medium text-[#0F172A] dark:text-[#F8FAFC] hover:bg-slate-50 dark:hover:bg-[#1F2937] transition-colors shadow-xs"
-          >
+            className="flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] px-3.5 py-2 text-[13px] font-medium text-[#0F172A] dark:text-[#F8FAFC] hover:bg-slate-50 dark:hover:bg-[#1F2937] transition-colors shadow-xs">
             <span>📱 Abrir Avaliação do Cliente</span>
           </a>
 
@@ -390,9 +402,14 @@ export default function ReviewsPage() {
             type="button"
             onClick={handleExportCsv}
             disabled={reviews.length === 0}
-            className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 disabled:opacity-50 px-3.5 py-2 text-[13px] font-medium text-white transition-colors cursor-pointer shadow-xs"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 disabled:opacity-50 px-3.5 py-2 text-[13px] font-medium text-white transition-colors cursor-pointer shadow-xs">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -433,7 +450,9 @@ export default function ReviewsPage() {
             <span className="text-[24px] font-bold text-emerald-600 dark:text-emerald-400">
               {loading ? "..." : promotersCount}
             </span>
-            <span className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">4 e 5 Estrelas</span>
+            <span className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+              4 e 5 Estrelas
+            </span>
           </div>
         </div>
 
@@ -451,7 +470,9 @@ export default function ReviewsPage() {
             <span className="text-[24px] font-bold text-amber-600 dark:text-amber-400">
               {loading ? "..." : retainedCount}
             </span>
-            <span className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">Protegidos do Google</span>
+            <span className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+              Protegidos do Google
+            </span>
           </div>
         </div>
 
@@ -475,7 +496,14 @@ export default function ReviewsPage() {
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] p-3.5 shadow-xs transition-colors">
         {/* Search Input */}
         <div className="flex items-center gap-2 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#1F2937] px-3 py-1.5 w-full md:w-80">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="text-slate-400">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -497,8 +525,7 @@ export default function ReviewsPage() {
               activeTab === "all"
                 ? "bg-[#2563EB] text-white"
                 : "text-[#475569] dark:text-[#CBD5E1] hover:bg-slate-100 dark:hover:bg-[#1F2937]"
-            }`}
-          >
+            }`}>
             Todas ({reviews.length})
           </button>
 
@@ -509,9 +536,10 @@ export default function ReviewsPage() {
               activeTab === "5star"
                 ? "bg-[#2563EB] text-white"
                 : "text-[#475569] dark:text-[#CBD5E1] hover:bg-slate-100 dark:hover:bg-[#1F2937]"
-            }`}
-          >
-            <span>5 Estrelas ({reviews.filter((r) => r.rating === 5).length})</span>
+            }`}>
+            <span>
+              5 Estrelas ({reviews.filter((r) => r.rating === 5).length})
+            </span>
           </button>
 
           <button
@@ -521,9 +549,10 @@ export default function ReviewsPage() {
               activeTab === "4star"
                 ? "bg-[#2563EB] text-white"
                 : "text-[#475569] dark:text-[#CBD5E1] hover:bg-slate-100 dark:hover:bg-[#1F2937]"
-            }`}
-          >
-            <span>4 Estrelas ({reviews.filter((r) => r.rating === 4).length})</span>
+            }`}>
+            <span>
+              4 Estrelas ({reviews.filter((r) => r.rating === 4).length})
+            </span>
           </button>
 
           <button
@@ -533,9 +562,14 @@ export default function ReviewsPage() {
               activeTab === "retained"
                 ? "bg-amber-600 text-white"
                 : "text-amber-700 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-            }`}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            }`}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
             <span>Ouvidoria Retida (&lt;4★) ({retainedCount})</span>
@@ -548,8 +582,7 @@ export default function ReviewsPage() {
               activeTab === "unreplied"
                 ? "bg-[#2563EB] text-white"
                 : "text-[#475569] dark:text-[#CBD5E1] hover:bg-slate-100 dark:hover:bg-[#1F2937]"
-            }`}
-          >
+            }`}>
             Não respondidas ({unrepliedCount})
           </button>
         </div>
@@ -560,8 +593,7 @@ export default function ReviewsPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] px-2 py-1 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none cursor-pointer"
-          >
+            className="rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] px-2 py-1 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none cursor-pointer">
             <option value="recent">Mais Recentes</option>
             <option value="highest">Maior Nota</option>
             <option value="lowest">Menor Nota</option>
@@ -591,8 +623,7 @@ export default function ReviewsPage() {
                 !rev.isPromoter
                   ? "border-amber-200/90 dark:border-amber-900/50 bg-amber-50/20 dark:bg-amber-950/10"
                   : "border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827]"
-              }`}
-            >
+              }`}>
               {/* Header: Customer Info + Rating + Routing Badge */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex items-center gap-3">
@@ -609,8 +640,7 @@ export default function ReviewsPage() {
                         !rev.isPromoter
                           ? "bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200"
                           : "bg-[#DBEAFE] dark:bg-blue-950/70 text-[#1D4ED8] dark:text-blue-300"
-                      }`}
-                    >
+                      }`}>
                       {rev.initials}
                     </div>
                   )}
@@ -642,7 +672,13 @@ export default function ReviewsPage() {
                   <div className="flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 px-2.5 py-1">
                     <div className="flex items-center gap-0.5 text-amber-500">
                       {[1, 2, 3, 4, 5].map((s) => (
-                        <span key={s} className={s <= rev.rating ? "text-amber-500" : "text-slate-300"}>
+                        <span
+                          key={s}
+                          className={
+                            s <= rev.rating
+                              ? "text-amber-500"
+                              : "text-slate-300"
+                          }>
                           ★
                         </span>
                       ))}
@@ -655,15 +691,34 @@ export default function ReviewsPage() {
                   {/* Routing Badge */}
                   {rev.isPromoter ? (
                     <div className="flex items-center gap-1.5 rounded-full bg-emerald-100/90 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/40 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                       <span>Triado p/ Google Maps</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 rounded-full bg-amber-100/90 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/40 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5">
+                        <rect
+                          x="3"
+                          y="11"
+                          width="18"
+                          height="11"
+                          rx="2"
+                          ry="2"
+                        />
                         <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                       </svg>
                       <span>Retido na Ouvidoria (Privado)</span>
@@ -693,11 +748,14 @@ export default function ReviewsPage() {
                       return (
                         <div
                           key={ans.id}
-                          className="flex items-center gap-1 rounded-md bg-slate-100 dark:bg-[#1F2937] px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-800"
-                        >
+                          className="flex items-center gap-1 rounded-md bg-slate-100 dark:bg-[#1F2937] px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-800">
                           <span className="font-semibold">{label}:</span>
-                          <span className="text-amber-500 font-bold">{"★".repeat(ans.ratingValue)}</span>
-                          <span className="text-slate-400">({ans.ratingValue}/5)</span>
+                          <span className="text-amber-500 font-bold">
+                            {"★".repeat(ans.ratingValue)}
+                          </span>
+                          <span className="text-slate-400">
+                            ({ans.ratingValue}/5)
+                          </span>
                         </div>
                       );
                     }
@@ -706,8 +764,7 @@ export default function ReviewsPage() {
                       return (
                         <div
                           key={ans.id}
-                          className="flex items-center gap-1 rounded-md bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 text-xs text-blue-800 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900/40"
-                        >
+                          className="flex items-center gap-1 rounded-md bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 text-xs text-blue-800 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900/40">
                           <span className="font-semibold">{label}:</span>
                           <span>{ans.selectedItems.join(", ")}</span>
                         </div>
@@ -718,8 +775,7 @@ export default function ReviewsPage() {
                       return (
                         <div
                           key={ans.id}
-                          className="flex items-center gap-1 rounded-md bg-slate-100 dark:bg-[#1F2937] px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-800"
-                        >
+                          className="flex items-center gap-1 rounded-md bg-slate-100 dark:bg-[#1F2937] px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-800">
                           <span className="font-semibold">{label}:</span>
                           <span>&ldquo;{ans.textValue}&rdquo;</span>
                         </div>
@@ -744,8 +800,7 @@ export default function ReviewsPage() {
                         href={m.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="relative block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 hover:opacity-90 transition shadow-xs"
-                      >
+                        className="relative block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 hover:opacity-90 transition shadow-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={m.url}
@@ -767,7 +822,9 @@ export default function ReviewsPage() {
                       <span>Resposta de {company?.tradeName || "Você"}:</span>
                     </div>
                     {rev.replyDate && (
-                      <span className="text-[11px] font-normal text-slate-400">{rev.replyDate}</span>
+                      <span className="text-[11px] font-normal text-slate-400">
+                        {rev.replyDate}
+                      </span>
                     )}
                   </div>
                   <p className="text-slate-600 dark:text-slate-300 text-[13px] leading-5 m-0">
@@ -783,13 +840,6 @@ export default function ReviewsPage() {
                     <span className="font-semibold text-slate-800 dark:text-slate-200">
                       Escreva a resposta oficial para {rev.customerName}:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleAiSuggest(rev)}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      ✨ Sugerir com IA
-                    </button>
                   </div>
 
                   <textarea
@@ -808,30 +858,40 @@ export default function ReviewsPage() {
                         setReplyingId(null);
                         setReplyInput("");
                       }}
-                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-[#1F2937]"
-                    >
+                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-[#1F2937]">
                       Cancelar
                     </button>
                     <button
                       type="button"
                       disabled={isSavingReply || !replyInput.trim()}
                       onClick={() => handleSendReply(rev.id)}
-                      className="rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs"
-                    >
+                      className="rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs">
                       {isSavingReply ? "Salvando..." : "Salvar Resposta"}
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-[#1F2937] text-xs">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1F2937] text-xs">
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={() => handleCopyReviewLink(rev.id)}
-                      className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer"
-                    >
-                      {copiedReviewId === rev.id ? "✓ Link copiado" : "Compartilhar página de feed"}
+                      className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer">
+                      {copiedReviewId === rev.id
+                        ? "✓ Link copiado"
+                        : "Compartilhar página de feed"}
                     </button>
+                    {rev.phone && (
+                      <a
+                        href={`https://wa.me/55${rev.phone.replace(/\D/g, "")}?text=${encodeURIComponent(
+                          `Olá ${rev.customerName}, aqui é da equipe do ${company?.tradeName || "estabelecimento"}. Vimos sua avaliação e gostaríamos de falar com você!`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline">
+                        <span>💬</span> Chamar no WhatsApp
+                      </a>
+                    )}
                   </div>
 
                   <button
@@ -840,8 +900,7 @@ export default function ReviewsPage() {
                       setReplyingId(rev.id);
                       setReplyInput(rev.replyText || "");
                     }}
-                    className="rounded-md border border-[#DBEAFE] dark:border-blue-900/40 bg-[#EFF6FF] dark:bg-blue-950/40 px-3 py-1 text-[12px] font-semibold text-[#2563EB] dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
-                  >
+                    className="rounded-md border border-[#DBEAFE] dark:border-blue-900/40 bg-[#EFF6FF] dark:bg-blue-950/40 px-3 py-1 text-[12px] font-semibold text-[#2563EB] dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors cursor-pointer">
                     {rev.replied ? "Editar Resposta" : "Responder ao Cliente"}
                   </button>
                 </div>
@@ -857,7 +916,9 @@ export default function ReviewsPage() {
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {search ? "Nenhum resultado para a busca" : "Nenhuma avaliação recebida ainda"}
+                  {search
+                    ? "Nenhum resultado para a busca"
+                    : "Nenhuma avaliação recebida ainda"}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
                   {search
@@ -870,16 +931,14 @@ export default function ReviewsPage() {
                 <div className="flex items-center gap-3 pt-2">
                   <a
                     href="/qrcode"
-                    className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs"
-                  >
+                    className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs">
                     Ver e Imprimir QR Codes
                   </a>
                   <a
                     href={getClientStoreUrl(company?.slug)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg border border-slate-300 dark:border-[#334155] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1F2937]"
-                  >
+                    className="rounded-lg border border-slate-300 dark:border-[#334155] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1F2937]">
                     Testar Avaliação como Cliente →
                   </a>
                 </div>

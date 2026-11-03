@@ -29,74 +29,68 @@ export default function FormBuilderPage() {
   const [newType, setNewType] = React.useState<"RATING_5" | "SINGLE_SELECT" | "MULTI_SELECT" | "TEXT">("RATING_5");
   const [newOptionsText, setNewOptionsText] = React.useState("Excelente, Bom, Regular");
 
-  React.useEffect(() => {
-    async function loadCompanyAndFields() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+  // Estado para Edição de critério existente
+  const [editingField, setEditingField] = React.useState<CustomFieldItem | null>(null);
+  const [editLabel, setEditLabel] = React.useState("");
+  const [editType, setEditType] = React.useState<"RATING_5" | "SINGLE_SELECT" | "MULTI_SELECT" | "TEXT">("RATING_5");
+  const [editOptionsText, setEditOptionsText] = React.useState("");
+  const [isUpdating, setIsUpdating] = React.useState(false);
 
-        let activeCompany: any = null;
+  const loadCompanyAndFields = React.useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
 
-        if (user) {
-          const { data: companyData } = await supabase
-            .from("Company")
-            .select("*")
-            .eq("ownerId", user.id)
-            .maybeSingle();
+      let activeCompany: any = null;
 
-          if (companyData) {
-            activeCompany = companyData;
-          }
+      if (user) {
+        const { data: companyData } = await supabase
+          .from("Company")
+          .select("*")
+          .eq("ownerId", user.id)
+          .maybeSingle();
+
+        if (companyData) {
+          activeCompany = companyData;
         }
-
-        // Fallback para localStorage
-        if (!activeCompany && typeof window !== "undefined") {
-          const stored = localStorage.getItem("review14_current_company");
-          if (stored) {
-            try {
-              activeCompany = JSON.parse(stored);
-            } catch (e) {
-              // ignore
-            }
-          }
-        }
-
-        if (activeCompany) {
-          setCompany(activeCompany);
-
-          // Busca campos no Supabase (sem criar nenhum critério padrão forçado)
-          if (activeCompany.id) {
-            // Remove quaisquer critérios residuais gerados automaticamente
-            await supabase
-              .from("CustomField")
-              .delete()
-              .eq("companyId", activeCompany.id)
-              .in("label", [
-                "Qualidade dos Produtos / Comida",
-                "Agilidade e Atendimento",
-                "Ambiente e Limpeza",
-              ]);
-
-            const { data: dbFields, error } = await supabase
-              .from("CustomField")
-              .select("*")
-              .eq("companyId", activeCompany.id)
-              .order("order", { ascending: true });
-
-            if (!error && dbFields) {
-              setFields(dbFields as CustomFieldItem[]);
-            } else {
-              setFields([]);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao carregar campos personalizados:", err);
-      } finally {
-        setLoading(false);
       }
-    }
 
+      // Fallback para localStorage
+      if (!activeCompany && typeof window !== "undefined") {
+        const stored = localStorage.getItem("review14_current_company");
+        if (stored) {
+          try {
+            activeCompany = JSON.parse(stored);
+          } catch {}
+        }
+      }
+
+      if (activeCompany) {
+        setCompany(activeCompany);
+
+        if (activeCompany.id) {
+          // Busca campos reais no Supabase em ordem crescente (sem exclusão automática)
+          const { data: dbFields, error } = await supabase
+            .from("CustomField")
+            .select("*")
+            .eq("companyId", activeCompany.id)
+            .order("order", { ascending: true });
+
+          if (!error && dbFields) {
+            setFields(dbFields as CustomFieldItem[]);
+          } else {
+            setFields([]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar campos personalizados:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
     loadCompanyAndFields();
 
     const handleCompanyUpdated = (e: any) => {
@@ -109,8 +103,9 @@ export default function FormBuilderPage() {
     return () => {
       window.removeEventListener("review14_company_updated", handleCompanyUpdated as EventListener);
     };
-  }, []);
+  }, [loadCompanyAndFields]);
 
+  // Adicionar novo critério
   const handleAddField = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLabel.trim()) return;
@@ -125,7 +120,7 @@ export default function FormBuilderPage() {
       if (!companyId) {
         setFeedbackMsg({
           type: "error",
-          text: "Estabelecimento não identificado. Configure seu estabelecimento no Onboarding primeiro.",
+          text: "Estabelecimento não identificado. Configure seu estabelecimento nas Configurações primeiro.",
         });
         setSaving(false);
         return;
@@ -143,13 +138,15 @@ export default function FormBuilderPage() {
       }
 
       const newId = `cf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const nextOrder = fields.length > 0 ? Math.max(...fields.map((f) => f.order || 0)) + 1 : 1;
+
       const newFieldData: CustomFieldItem = {
         id: newId,
         companyId,
         label: newLabel.trim(),
         fieldType: newType,
         options: parsedOptions,
-        order: fields.length + 1,
+        order: nextOrder,
         isActive: true,
       };
 
@@ -180,6 +177,125 @@ export default function FormBuilderPage() {
     }
   };
 
+  // Abrir modal de edição
+  const handleOpenEdit = (field: CustomFieldItem) => {
+    setEditingField(field);
+    setEditLabel(field.label);
+    setEditType(field.fieldType);
+    setEditOptionsText(Array.isArray(field.options) ? field.options.join(", ") : "");
+  };
+
+  // Salvar edição
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingField || !editLabel.trim()) return;
+
+    setIsUpdating(true);
+    try {
+      const supabase = createClient();
+
+      let parsedOptions: string[] | null = null;
+      if (editType === "SINGLE_SELECT" || editType === "MULTI_SELECT") {
+        parsedOptions = editOptionsText
+          .split(",")
+          .map((opt) => opt.trim())
+          .filter(Boolean);
+        if (parsedOptions.length === 0) {
+          parsedOptions = ["Opção 1", "Opção 2", "Opção 3"];
+        }
+      }
+
+      const { error } = await supabase
+        .from("CustomField")
+        .update({
+          label: editLabel.trim(),
+          fieldType: editType,
+          options: parsedOptions,
+          updatedAt: new Date().toISOString(),
+        })
+        .eq("id", editingField.id);
+
+      if (error) throw error;
+
+      setFields((prev) =>
+        prev.map((f) =>
+          f.id === editingField.id
+            ? {
+                ...f,
+                label: editLabel.trim(),
+                fieldType: editType,
+                options: parsedOptions,
+              }
+            : f
+        )
+      );
+
+      toast.success("Pergunta atualizada com sucesso!");
+      setEditingField(null);
+    } catch (err: any) {
+      console.error("Erro ao atualizar critério:", err);
+      toast.error(err.message || "Erro ao atualizar pergunta.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Reordenação: Mover para Cima
+  const handleMoveUp = async (index: number) => {
+    if (index === 0) return;
+    const current = fields[index];
+    const prev = fields[index - 1];
+
+    const currentOrder = current.order ?? index + 1;
+    const prevOrder = prev.order ?? index;
+
+    // Inverte a ordem
+    const newFields = [...fields];
+    newFields[index - 1] = { ...current, order: prevOrder };
+    newFields[index] = { ...prev, order: currentOrder };
+
+    setFields(newFields);
+
+    try {
+      const supabase = createClient();
+      await Promise.all([
+        supabase.from("CustomField").update({ order: prevOrder }).eq("id", current.id),
+        supabase.from("CustomField").update({ order: currentOrder }).eq("id", prev.id),
+      ]);
+    } catch (err) {
+      console.error("Erro ao reordenar campos:", err);
+      loadCompanyAndFields();
+    }
+  };
+
+  // Reordenação: Mover para Baixo
+  const handleMoveDown = async (index: number) => {
+    if (index >= fields.length - 1) return;
+    const current = fields[index];
+    const next = fields[index + 1];
+
+    const currentOrder = current.order ?? index + 1;
+    const nextOrder = next.order ?? index + 2;
+
+    const newFields = [...fields];
+    newFields[index] = { ...next, order: currentOrder };
+    newFields[index + 1] = { ...current, order: nextOrder };
+
+    setFields(newFields);
+
+    try {
+      const supabase = createClient();
+      await Promise.all([
+        supabase.from("CustomField").update({ order: nextOrder }).eq("id", current.id),
+        supabase.from("CustomField").update({ order: currentOrder }).eq("id", next.id),
+      ]);
+    } catch (err) {
+      console.error("Erro ao reordenar campos:", err);
+      loadCompanyAndFields();
+    }
+  };
+
+  // Remover critério
   const handleRemoveField = async (id: string, label: string) => {
     try {
       const supabase = createClient();
@@ -199,6 +315,7 @@ export default function FormBuilderPage() {
     }
   };
 
+  // Alternar ativo/inativo
   const handleToggleActive = async (field: CustomFieldItem) => {
     try {
       const supabase = createClient();
@@ -239,10 +356,10 @@ export default function FormBuilderPage() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-[24px] font-bold leading-[30px] tracking-tight text-[#0F172A] dark:text-[#F8FAFC] m-0">
-              Construtor de Perguntas &amp; Critérios PRO
+              Construtor de Perguntas &amp; Critérios
             </h1>
-            <span className="rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-900/50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
-              ⭐ Recurso PRO Ativo
+            <span className="rounded-full bg-blue-100 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+              Formulário Personalizado
             </span>
           </div>
           <p className="text-[13px] leading-4 text-[#64748B] dark:text-[#94A3B8] m-0">
@@ -362,13 +479,13 @@ export default function FormBuilderPage() {
             </form>
           </div>
 
-          {/* Dica Estratégica PRO */}
-          <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-1.5">
-            <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
-              💡 Dica de Engajamento PRO:
+          {/* Dica Estratégica */}
+          <div className="rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-4 space-y-1.5">
+            <span className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+              💡 Dica de Engajamento:
             </span>
-            <p className="text-[11px] leading-4 text-amber-800 dark:text-amber-200/90 m-0">
-              Formulários com <strong>3 a 4 perguntas focadas</strong> mantêm a taxa de conclusão acima de 85%. Subcategorias de 5 estrelas são respondidas em menos de 5 segundos pelos clientes no celular.
+            <p className="text-[11px] leading-4 text-blue-800 dark:text-blue-200/90 m-0">
+              Formulários com <strong>3 a 4 perguntas focadas</strong> mantêm a taxa de conclusão acima de 85%. Subcategorias de estrelas e escolhas rápidas são respondidas em poucos segundos no celular.
             </p>
           </div>
         </div>
@@ -403,9 +520,29 @@ export default function FormBuilderPage() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-bold text-xs">
-                        {idx + 1}
+                      {/* Botões de Reordenação */}
+                      <div className="flex flex-col gap-1 items-center justify-center">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => handleMoveUp(idx)}
+                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 disabled:opacity-20 cursor-pointer"
+                          title="Mover para cima"
+                        >
+                          ▲
+                        </button>
+                        <span className="text-[10px] font-bold text-slate-400">{idx + 1}</span>
+                        <button
+                          type="button"
+                          disabled={idx === fields.length - 1}
+                          onClick={() => handleMoveDown(idx)}
+                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 disabled:opacity-20 cursor-pointer"
+                          title="Mover para baixo"
+                        >
+                          ▼
+                        </button>
                       </div>
+
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -427,6 +564,17 @@ export default function FormBuilderPage() {
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto">
+                      {/* Botão de Edição */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(field)}
+                        className="text-[11px] px-2.5 py-1 rounded-md font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/60 transition-colors"
+                        title="Editar pergunta"
+                      >
+                        ✏️ Editar
+                      </button>
+
+                      {/* Botão de Ativar/Desativar */}
                       <button
                         type="button"
                         onClick={() => handleToggleActive(field)}
@@ -439,13 +587,14 @@ export default function FormBuilderPage() {
                         {field.isActive ? "Ativa" : "Ativar"}
                       </button>
 
+                      {/* Botão de Excluir */}
                       <button
                         type="button"
                         onClick={() => handleRemoveField(field.id, field.label)}
                         className="text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 rounded-md transition-colors"
                         title="Remover pergunta"
                       >
-                        ✕ Remover
+                        ✕
                       </button>
                     </div>
                   </div>
@@ -455,6 +604,89 @@ export default function FormBuilderPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Edição de Critério */}
+      {editingField && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Editar Pergunta / Critério
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingField(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Título da Pergunta *
+                </label>
+                <input
+                  type="text"
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1F2937] text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Tipo de Resposta
+                </label>
+                <select
+                  value={editType}
+                  onChange={(e) => setEditType(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1F2937] text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+                >
+                  <option value="RATING_5">⭐ Classificação de 1 a 5 Estrelas</option>
+                  <option value="SINGLE_SELECT">🔘 Escolha Única (Opções prontas)</option>
+                  <option value="MULTI_SELECT">☑️ Múltipla Escolha (Acordeon de tags)</option>
+                  <option value="TEXT">💬 Pergunta Aberta (Texto livre)</option>
+                </select>
+              </div>
+
+              {(editType === "SINGLE_SELECT" || editType === "MULTI_SELECT") && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex justify-between">
+                    <span>Opções de Resposta</span>
+                    <span className="text-[10px] text-slate-400 font-normal">separadas por vírgula</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editOptionsText}
+                    onChange={(e) => setEditOptionsText(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1F2937] text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingField(null)}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating || !editLabel.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-xs"
+                >
+                  {isUpdating ? "Salvando..." : "Salvar Alterações"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

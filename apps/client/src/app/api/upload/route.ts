@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { R2Service } from "@saas/core";
+import { StorageService } from "@saas/core";
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const presignedData = await R2Service.createPresignedUploadUrl({
+    const presignedData = await StorageService.createPresignedUploadUrl({
       companyId,
       filename,
       contentType,

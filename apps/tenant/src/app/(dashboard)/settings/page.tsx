@@ -6,6 +6,7 @@ import { Button } from "@ui/components/button";
 import { Input } from "@ui/components/input";
 import { createClient } from "@/lib/supabase/client";
 import { getClientBaseUrl, getClientStoreUrl } from "@/lib/urls";
+import { toast } from "@saas/ui/components/sonner";
 
 interface CompanyRecord {
   id: string;
@@ -22,6 +23,7 @@ interface CompanyRecord {
   minRatingForGoogle: number;
   planTier: string;
   ownerId: string;
+  logoUrl?: string | null;
 }
 
 export default function TenantSettingsPage() {
@@ -30,10 +32,16 @@ export default function TenantSettingsPage() {
   const [userId, setUserId] = React.useState<string | null>(null);
   const [companyId, setCompanyId] = React.useState<string | null>(null);
 
+  // Logo & Mídia
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
   // Form Fields
   const [tradeName, setTradeName] = React.useState("");
   const [legalName, setLegalName] = React.useState("");
   const [cnpj, setCnpj] = React.useState("");
+  const [isFetchingCnpj, setIsFetchingCnpj] = React.useState(false);
   const [category, setCategory] = React.useState("Restaurante");
   const [slug, setSlug] = React.useState("");
   const [slugCustomized, setSlugCustomized] = React.useState(false);
@@ -113,6 +121,7 @@ export default function TenantSettingsPage() {
             setGooglePlaceId(comp.googlePlaceId || "");
             setCustomRedirectUrl(comp.customRedirectUrl || "");
             setMinRating(comp.minRatingForGoogle ?? 4);
+            setLogoUrl(comp.logoUrl || null);
 
             if (typeof window !== "undefined") {
               localStorage.setItem("review14_current_company", JSON.stringify(comp));
@@ -127,6 +136,7 @@ export default function TenantSettingsPage() {
                 if (parsed.legalName) setLegalName(parsed.legalName);
                 if (parsed.cnpj) setCnpj(formatCnpj(parsed.cnpj));
                 if (parsed.category) setCategory(parsed.category);
+                if (parsed.logoUrl) setLogoUrl(parsed.logoUrl);
                 if (parsed.slug) {
                   setSlug(parsed.slug);
                   setSlugCustomized(true);
@@ -146,6 +156,134 @@ export default function TenantSettingsPage() {
 
     loadData();
   }, []);
+
+  // Upload do Logotipo para o Supabase Storage
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor, selecione um arquivo de imagem válido (PNG, JPG, WEBP).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 5MB.");
+      return;
+    }
+
+    setUploadingLogo(true);
+    toast.info("Enviando logotipo para o servidor...");
+
+    try {
+      const supabase = createClient();
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const storagePath = `logos/${companyId || userId || "general"}/${Date.now()}_${sanitizedName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("reviews")
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Erro de upload no bucket:", uploadError);
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("reviews")
+        .getPublicUrl(storagePath);
+
+      if (publicUrlData?.publicUrl) {
+        setLogoUrl(publicUrlData.publicUrl);
+        toast.success("Logotipo atualizado com sucesso! Clique em Salvar para fixar.");
+      }
+    } catch (err: any) {
+      console.error("Erro ao fazer upload da imagem:", err);
+      toast.error(err?.message || "Falha no envio da imagem.");
+    } finally {
+      setUploadingLogo(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoUrl(null);
+    toast.info("Logotipo removido. Salve para confirmar.");
+  };
+
+  // Consulta de CNPJ na Brasil API (Receita Federal)
+  const handleFetchCnpj = async () => {
+    const clean = cnpj.replace(/\D/g, "");
+    if (clean.length !== 14) {
+      toast.warning("Digite um CNPJ válido com 14 dígitos para consultar.");
+      return;
+    }
+
+    setIsFetchingCnpj(true);
+    toast.info("Consultando dados da empresa na Receita Federal...");
+
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`);
+      if (res.ok) {
+        const data = await res.json();
+        const foundLegal = data.razao_social || "";
+        const foundTrade = data.nome_fantasia || data.razao_social || "";
+
+        if (foundLegal) setLegalName(foundLegal);
+        if (!tradeName && foundTrade) {
+          setTradeName(foundTrade);
+          if (!slugCustomized) {
+            setSlug(generateSlug(foundTrade));
+          }
+        }
+        if (data.municipio) setCity(data.municipio);
+        if (data.uf) setState(data.uf);
+
+        if (data.ddd_telefone_1 && !phone) {
+          const rawPhone = data.ddd_telefone_1.replace(/\D/g, "");
+          if (rawPhone.length >= 10) {
+            setPhone(
+              rawPhone.length === 11
+                ? rawPhone.replace(/^(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
+                : rawPhone.replace(/^(\d{2})(\d{4})(\d{4})/, "($1) $2-$3")
+            );
+          }
+        }
+
+        toast.success("Dados cadastrais obtidos da Receita Federal com sucesso!");
+      } else {
+        toast.warning("CNPJ não encontrado na base pública. Preencha os campos manualmente.");
+      }
+    } catch (err) {
+      console.warn("Falha na consulta da Brasil API:", err);
+      toast.warning("Não foi possível consultar a Receita Federal agora. Preencha manualmente.");
+    } finally {
+      setIsFetchingCnpj(false);
+    }
+  };
+
+  // Testar Link de Avaliação do Google Maps
+  const handleTestGoogleLink = () => {
+    if (googlePlaceId.trim()) {
+      window.open(
+        `https://search.google.com/local/writereview?placeid=${googlePlaceId.trim()}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } else {
+      const query = encodeURIComponent(`${tradeName} ${city}`.trim());
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${query}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,6 +353,7 @@ export default function TenantSettingsPage() {
             cnpj: cleanCnpj,
             category: targetCategory,
             slug: finalSlug,
+            logoUrl: logoUrl || null,
             phone: phone.trim() || null,
             city: city.trim() || null,
             state: state.trim() || null,
@@ -243,6 +382,7 @@ export default function TenantSettingsPage() {
             cnpj: cleanCnpj,
             category: targetCategory,
             slug: finalSlug,
+            logoUrl: logoUrl || null,
             phone: phone.trim() || null,
             city: city.trim() || null,
             state: state.trim() || null,
@@ -323,13 +463,15 @@ export default function TenantSettingsPage() {
       }
 
       setSuccessMessage(
-        "Loja configurada com sucesso! O link do QR Code e as perguntas de avaliação já estão 100% ativos."
+        "Loja configurada com sucesso! O logotipo, o link do QR Code e as regras de avaliação já estão 100% salvos."
       );
+      toast.success("Configurações salvas com sucesso!");
     } catch (err: any) {
       console.error("Erro ao salvar loja:", err);
       setErrorMessage(
         err?.message || "Ocorreu um erro ao salvar as configurações. Tente novamente."
       );
+      toast.error("Falha ao salvar configurações.");
     } finally {
       setSaving(false);
     }
@@ -352,7 +494,7 @@ export default function TenantSettingsPage() {
             </span>
           </div>
           <p className="text-[13px] leading-4 text-[#64748B] dark:text-[#94A3B8] m-0">
-            Configure a identidade da sua loja, o link público do QR Code e as regras de proteção de reputação no Google.
+            Configure o logotipo da sua loja, o link público do QR Code e as regras de proteção de reputação no Google Maps.
           </p>
         </div>
 
@@ -466,7 +608,102 @@ export default function TenantSettingsPage() {
       <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna Principal (2/3 da largura) */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Seção 1: Dados Cadastrais */}
+          {/* Seção 1: Logotipo & Identidade Visual */}
+          <div className="p-6 bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] rounded-3xl shadow-xs space-y-6">
+            <div className="border-b border-slate-100 dark:border-[#1F2937] pb-3">
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#2563EB"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+                Logotipo &amp; Identidade Visual
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                O logotipo aparece no topo do formulário de avaliação do cliente e no feed público da sua loja.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-5">
+              {/* Avatar Preview */}
+              <div className="relative group">
+                <div className="h-24 w-24 rounded-2xl border-2 border-dashed border-slate-300 dark:border-[#334155] bg-slate-50 dark:bg-[#1F2937] flex items-center justify-center overflow-hidden shadow-inner">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logoUrl}
+                      alt={`Logotipo ${tradeName}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl font-bold text-slate-400 dark:text-slate-500">
+                      {tradeName ? tradeName.slice(0, 2).toUpperCase() : "★"}
+                    </span>
+                  )}
+                </div>
+
+                {uploadingLogo && (
+                  <div className="absolute inset-0 bg-slate-900/60 rounded-2xl flex items-center justify-center text-white text-xs font-semibold">
+                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {/* Botões de Ação do Logo */}
+              <div className="space-y-2 flex-1 text-center sm:text-left">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleLogoFileChange}
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                />
+
+                <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingLogo}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-slate-300 dark:border-[#334155] text-xs font-semibold"
+                  >
+                    {logoUrl ? "Trocar Logotipo" : "Fazer Upload do Logotipo"}
+                  </Button>
+
+                  {logoUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveLogo}
+                      className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                    >
+                      Remover
+                    </Button>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  Recomendado: Imagem quadrada em formato PNG, JPG ou WEBP de até 5MB.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Seção 2: Dados Cadastrais */}
           <div className="p-6 bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] rounded-3xl shadow-xs space-y-6">
             <div className="border-b border-slate-100 dark:border-[#1F2937] pb-3">
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -509,19 +746,51 @@ export default function TenantSettingsPage() {
                 </p>
               </div>
 
-              {/* CNPJ */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  CNPJ
-                </label>
-                <Input
-                  value={cnpj}
-                  onChange={(e) => setCnpj(formatCnpj(e.target.value))}
-                  placeholder="00.000.000/0000-00"
-                  className="dark:bg-[#1F2937] dark:border-[#334155] dark:text-white"
-                />
+              {/* CNPJ com Consulta na Brasil API */}
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    CNPJ
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    Opcional para MEI / autônomos
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={cnpj}
+                    onChange={(e) => setCnpj(formatCnpj(e.target.value))}
+                    onBlur={() => {
+                      const clean = cnpj.replace(/\D/g, "");
+                      if (clean.length === 14 && !legalName) {
+                        handleFetchCnpj();
+                      }
+                    }}
+                    placeholder="00.000.000/0000-00"
+                    className="dark:bg-[#1F2937] dark:border-[#334155] dark:text-white"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isFetchingCnpj || cnpj.replace(/\D/g, "").length < 14}
+                    onClick={handleFetchCnpj}
+                    className="shrink-0 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-semibold hover:bg-blue-100"
+                  >
+                    {isFetchingCnpj ? (
+                      <span className="flex items-center gap-1.5">
+                        <svg className="animate-spin h-3.5 w-3.5 text-blue-600" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                        Buscando...
+                      </span>
+                    ) : (
+                      "🔍 Consultar na Receita"
+                    )}
+                  </Button>
+                </div>
                 <p className="text-[11px] text-slate-400">
-                  Opcional para negócios MEI / autônomos.
+                  Preencha o CNPJ e clique em consultar para autocompletar Razão Social, Cidade e Estado diretamente da Receita Federal.
                 </p>
               </div>
 
@@ -605,7 +874,7 @@ export default function TenantSettingsPage() {
             </div>
           </div>
 
-          {/* Seção 2: Link do Estabelecimento & QR Code */}
+          {/* Seção 3: Link do Estabelecimento & QR Code */}
           <div className="p-6 bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] rounded-3xl shadow-xs space-y-6">
             <div className="border-b border-slate-100 dark:border-[#1F2937] pb-3">
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -679,7 +948,7 @@ export default function TenantSettingsPage() {
             </div>
           </div>
 
-          {/* Seção 3: Triagem do Google Meu Negócio */}
+          {/* Seção 4: Triagem do Google Meu Negócio */}
           <div className="p-6 bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] rounded-3xl shadow-xs space-y-6">
             <div className="border-b border-slate-100 dark:border-[#1F2937] pb-3">
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -718,14 +987,24 @@ export default function TenantSettingsPage() {
                     Onde encontrar meu Place ID? ↗
                   </a>
                 </div>
-                <Input
-                  value={googlePlaceId}
-                  onChange={(e) => setGooglePlaceId(e.target.value)}
-                  placeholder="Ex: ChIJN1t_tDeuEmsRUsoyG83frY4"
-                  className="dark:bg-[#1F2937] dark:border-[#334155] dark:text-white font-mono text-sm"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={googlePlaceId}
+                    onChange={(e) => setGooglePlaceId(e.target.value)}
+                    placeholder="Ex: ChIJN1t_tDeuEmsRUsoyG83frY4"
+                    className="dark:bg-[#1F2937] dark:border-[#334155] dark:text-white font-mono text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestGoogleLink}
+                    className="shrink-0 border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-xs font-semibold hover:bg-amber-100"
+                  >
+                    ⭐ Testar Link Google
+                  </Button>
+                </div>
                 <p className="text-[11px] text-slate-400">
-                  Se não tiver o Place ID, o sistema busca automaticamente pelo nome da sua loja no Google Maps.
+                  Se você preencher o Place ID, o cliente é levado diretamente à tela de dar 5 estrelas no Google.
                 </p>
               </div>
 
@@ -766,7 +1045,7 @@ export default function TenantSettingsPage() {
                 Salvar Alterações
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Clique abaixo para atualizar o perfil e ativar o link e os QR Codes da sua loja.
+                Clique abaixo para atualizar o perfil, salvar o logotipo e ativar os links da sua loja.
               </p>
             </div>
 
@@ -775,7 +1054,7 @@ export default function TenantSettingsPage() {
               disabled={saving || loading}
               size="lg"
               fullWidth
-              className="font-semibold shadow-md bg-blue-600 hover:bg-blue-700 text-white"
+              className="font-semibold shadow-md bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               {saving ? (
                 <span className="flex items-center gap-2">
@@ -815,7 +1094,7 @@ export default function TenantSettingsPage() {
                   type="button"
                   variant="outline"
                   fullWidth
-                  className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs font-semibold justify-center"
+                  className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs font-semibold justify-center cursor-pointer"
                 >
                   Gerenciar Perguntas PRO →
                 </Button>
@@ -825,7 +1104,7 @@ export default function TenantSettingsPage() {
                   type="button"
                   variant="outline"
                   fullWidth
-                  className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs font-semibold justify-center"
+                  className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs font-semibold justify-center cursor-pointer"
                 >
                   Gerar QR Codes →
                 </Button>

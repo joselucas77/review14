@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getClientStoreUrl } from "@/lib/urls";
 import { toast } from "@saas/ui/components/sonner";
@@ -60,12 +61,20 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+const DATE_OPTIONS = [
+  "Tempo Todo",
+  "Hoje",
+  "Últimos 7 dias",
+  "Últimos 30 dias",
+  "Este Mês",
+];
+
 export default function TenantDashboardPage() {
   const [company, setCompany] = React.useState<CompanyData | null>(null);
   const [reviewsList, setReviewsList] = React.useState<Review[]>([]);
   const [loading, setLoading] = React.useState(true);
 
-  const [activeFilter, setActiveFilter] = React.useState<"all" | "5star" | "4star" | "unreplied">("all");
+  const [activeFilter, setActiveFilter] = React.useState<"all" | "5star" | "4star" | "retained" | "unreplied">("all");
   const [dateRange, setDateRange] = React.useState("Tempo Todo");
   const [dateMenuOpen, setDateMenuOpen] = React.useState(false);
   const [replyingToId, setReplyingToId] = React.useState<string | null>(null);
@@ -235,39 +244,89 @@ export default function TenantDashboardPage() {
     document.body.removeChild(link);
   };
 
-  // KPIs com dados reais
-  const totalReviews = reviewsList.length;
+  // 1. Filtragem por Período de Data
+  const dateFilteredReviews = React.useMemo(() => {
+    if (dateRange === "Tempo Todo") return reviewsList;
+
+    const now = new Date();
+    return reviewsList.filter((r) => {
+      const itemDate = new Date(r.createdAt);
+      if (dateRange === "Hoje") {
+        return itemDate.toDateString() === now.toDateString();
+      }
+      if (dateRange === "Últimos 7 dias") {
+        return now.getTime() - itemDate.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      }
+      if (dateRange === "Últimos 30 dias") {
+        return now.getTime() - itemDate.getTime() <= 30 * 24 * 60 * 60 * 1000;
+      }
+      if (dateRange === "Este Mês") {
+        return (
+          itemDate.getMonth() === now.getMonth() &&
+          itemDate.getFullYear() === now.getFullYear()
+        );
+      }
+      return true;
+    });
+  }, [reviewsList, dateRange]);
+
+  // KPIs calculados sobre o período selecionado
+  const totalReviews = dateFilteredReviews.length;
   const avgRating =
     totalReviews > 0
-      ? (reviewsList.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1)
+      ? (dateFilteredReviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1)
       : "5.0";
-  const promoterCount = reviewsList.filter((r) => r.isPromoter).length;
+  const promoterCount = dateFilteredReviews.filter((r) => r.isPromoter).length;
   const satisfactionRate =
     totalReviews > 0 ? ((promoterCount / totalReviews) * 100).toFixed(1) : "100.0";
-  const unrepliedCount = reviewsList.filter((r) => !r.replied).length;
+  const unrepliedCount = dateFilteredReviews.filter((r) => !r.replied).length;
   const replyRate =
     totalReviews > 0
       ? (((totalReviews - unrepliedCount) / totalReviews) * 100).toFixed(1)
       : "100.0";
 
-  // Distribuição de notas
-  const count5 = reviewsList.filter((r) => r.rating === 5).length;
-  const count4 = reviewsList.filter((r) => r.rating === 4).length;
-  const count3 = reviewsList.filter((r) => r.rating === 3).length;
-  const count2 = reviewsList.filter((r) => r.rating === 2).length;
-  const count1 = reviewsList.filter((r) => r.rating === 1).length;
+  // Distribuição de notas no período
+  const count5 = dateFilteredReviews.filter((r) => r.rating === 5).length;
+  const count4 = dateFilteredReviews.filter((r) => r.rating === 4).length;
+  const count3 = dateFilteredReviews.filter((r) => r.rating === 3).length;
+  const count2 = dateFilteredReviews.filter((r) => r.rating === 2).length;
+  const count1 = dateFilteredReviews.filter((r) => r.rating === 1).length;
+  const countRetained = count3 + count2 + count1;
 
   const pct = (cnt: number) => (totalReviews > 0 ? `${(cnt / totalReviews) * 100}%` : "0%");
 
-  const filteredReviews = reviewsList.filter((rev) => {
+  // Filtragem por Tab ativa
+  const filteredReviews = dateFilteredReviews.filter((rev) => {
     if (activeFilter === "5star") return rev.rating === 5;
     if (activeFilter === "4star") return rev.rating === 4;
+    if (activeFilter === "retained") return rev.rating < (company?.minRatingForGoogle ?? 4);
     if (activeFilter === "unreplied") return !rev.replied;
     return true;
   });
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-6 md:p-8 select-none transition-colors duration-200">
+      {/* Banner se a loja ainda não estiver configurada */}
+      {!loading && !company && (
+        <div className="rounded-2xl border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 p-5 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🏪</span>
+            <div>
+              <h3 className="font-bold text-sm">Configure seu Estabelecimento</h3>
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                Você ainda não configurou o perfil da sua loja. Cadastre seu nome e link para ativar os QR Codes e receber avaliações.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/settings"
+            className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold transition shadow-xs shrink-0"
+          >
+            Configurar Loja Agora →
+          </Link>
+        </div>
+      )}
+
       {/* Title & Action Bar */}
       <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 items-start sm:items-end justify-between w-full">
         <div className="flex flex-col gap-1">
@@ -288,7 +347,49 @@ export default function TenantDashboardPage() {
         </div>
 
         {/* Date Selector & Export Button */}
-        <div className="flex items-center gap-2.5 relative">
+        <div className="flex items-center gap-2.5 relative flex-wrap sm:flex-nowrap">
+          {/* Seletor Visual de Datas */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setDateMenuOpen(!dateMenuOpen)}
+              className="flex items-center gap-2 rounded-lg border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#111827] px-3.5 py-2 text-[13px] font-semibold text-[#0F172A] dark:text-[#F8FAFC] hover:bg-slate-50 dark:hover:bg-[#1F2937] transition-colors shadow-xs cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span>{dateRange}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {dateMenuOpen && (
+              <div className="absolute right-0 top-11 z-50 w-44 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-1 shadow-xl animate-in fade-in duration-150">
+                {DATE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setDateRange(opt);
+                      setDateMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
+                      dateRange === opt
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-bold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <a
             href={getClientStoreUrl(company?.slug)}
             target="_blank"
@@ -315,7 +416,7 @@ export default function TenantDashboardPage() {
         </div>
       </div>
 
-      {/* 4 Metric Cards (Reais) */}
+      {/* 4 Metric Cards (Reais calculados por período) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
         {/* Card 1: Nota Média */}
         <div className="flex flex-col gap-2 rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] p-[18px] shadow-xs transition-colors duration-200">
@@ -344,7 +445,7 @@ export default function TenantDashboardPage() {
           <div className="flex items-center gap-1.5">
             <div className="rounded bg-[#F0FDF4] dark:bg-emerald-950/40 px-1.5 py-0.5">
               <span className="text-[11px] font-semibold leading-3.5 text-[#15803D] dark:text-emerald-400">
-                Tempo real
+                Período: {dateRange}
               </span>
             </div>
           </div>
@@ -508,18 +609,18 @@ export default function TenantDashboardPage() {
             <span className="text-[12px] font-semibold text-[#475569] dark:text-[#CBD5E1]">
               Acesso Rápido
             </span>
-            <a
+            <Link
               href="/reviews"
               className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline"
             >
               Ir para gestão completa de avaliações →
-            </a>
+            </Link>
           </div>
         </div>
 
         {/* Right Column: Filter Bar & Review Cards */}
         <div className="flex flex-col gap-3.5 flex-1 w-full">
-          {/* Filter Bar */}
+          {/* Filter Bar com abas completas */}
           <div className="flex items-center justify-between flex-wrap gap-2 rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] px-4 py-3 shadow-xs transition-colors duration-200">
             <div className="flex items-center gap-2 flex-wrap">
               {/* All */}
@@ -561,6 +662,19 @@ export default function TenantDashboardPage() {
                 <span>4★ ({count4})</span>
               </button>
 
+              {/* Ouvidoria / Notas Baixas (<4) */}
+              <button
+                type="button"
+                onClick={() => setActiveFilter("retained")}
+                className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] leading-4 font-medium transition-colors cursor-pointer ${
+                  activeFilter === "retained"
+                    ? "bg-amber-600 text-white"
+                    : "border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100"
+                }`}
+              >
+                <span>Ouvidoria &lt;4★ ({countRetained})</span>
+              </button>
+
               {/* Unreplied */}
               <button
                 type="button"
@@ -591,7 +705,11 @@ export default function TenantDashboardPage() {
               {filteredReviews.map((rev) => (
                 <div
                   key={rev.id}
-                  className="flex flex-col gap-2.5 rounded-xl border border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827] p-4 shadow-xs transition-colors duration-200"
+                  className={`flex flex-col gap-2.5 rounded-xl border p-4 shadow-xs transition-colors duration-200 ${
+                    !rev.isPromoter
+                      ? "border-amber-200/90 dark:border-amber-900/50 bg-amber-50/20 dark:bg-amber-950/10"
+                      : "border-[#E2E8F0] dark:border-[#1F2937] bg-white dark:bg-[#111827]"
+                  }`}
                 >
                   {/* Top Bar: Customer & Rating */}
                   <div className="flex items-center justify-between">
@@ -616,6 +734,11 @@ export default function TenantDashboardPage() {
                           <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1 py-0.2 rounded font-semibold border border-emerald-200/60">
                             Verificado
                           </span>
+                          {!rev.isPromoter && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.2 rounded font-semibold border border-amber-300 dark:border-amber-900/50">
+                              Ouvidoria Privada
+                            </span>
+                          )}
                         </div>
                         <span className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
                           {rev.timeAgo}
@@ -665,7 +788,7 @@ export default function TenantDashboardPage() {
                             setReplyingToId(null);
                             setReplyInput("");
                           }}
-                          className="px-3 py-1 text-xs text-slate-600 dark:text-slate-300"
+                          className="px-3 py-1 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
                         >
                           Cancelar
                         </button>
@@ -673,7 +796,7 @@ export default function TenantDashboardPage() {
                           type="button"
                           disabled={isSavingReply || !replyInput.trim()}
                           onClick={() => handleSendReply(rev.id)}
-                          className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                         >
                           {isSavingReply ? "Salvando..." : "Salvar"}
                         </button>
@@ -687,7 +810,7 @@ export default function TenantDashboardPage() {
                           setReplyingToId(rev.id);
                           setReplyInput(rev.replyText || "");
                         }}
-                        className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                        className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline cursor-pointer"
                       >
                         {rev.replied ? "Editar Resposta" : "Responder"}
                       </button>
@@ -699,7 +822,7 @@ export default function TenantDashboardPage() {
               {filteredReviews.length === 0 && (
                 <div className="rounded-xl border border-dashed border-slate-300 dark:border-[#334155] bg-white dark:bg-[#111827] p-8 text-center text-slate-500 text-xs">
                   {totalReviews === 0
-                    ? "Nenhuma avaliação recebida ainda. Escaneie seu QR Code para testar!"
+                    ? `Nenhuma avaliação encontrada para o período "${dateRange}".`
                     : "Nenhuma avaliação encontrada com o filtro selecionado."}
                 </div>
               )}

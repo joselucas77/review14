@@ -1,6 +1,5 @@
 import Stripe from "stripe";
-import { prisma } from "../db/client";
-import { PlanTier, SubscriptionStatus } from "@prisma/client";
+import { supabaseAdmin } from "../db/client";
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_build_placeholder", {
   apiVersion: "2024-09-30.acacia" as Stripe.LatestApiVersion,
@@ -61,9 +60,11 @@ export class StripeService {
   }
 
   /**
-   * Processador de eventos dos Webhooks do Stripe
+   * Processador de eventos dos Webhooks do Stripe via Supabase
    */
   static async handleWebhookEvent(event: Stripe.Event) {
+    const now = new Date().toISOString();
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
@@ -74,60 +75,68 @@ export class StripeService {
             session.subscription as string
           );
           const priceId = subscription.items.data[0]?.price.id;
-
           const isPro = priceId === process.env.STRIPE_PRICE_ID_PRO;
 
-          await prisma.company.update({
-            where: { id: companyId },
-            data: {
+          const { error } = await supabaseAdmin
+            .from("Company")
+            .update({
               stripeCustomerId: session.customer as string,
               stripeSubscriptionId: subscription.id,
               stripePriceId: priceId,
-              planTier: isPro ? PlanTier.PRO : PlanTier.BASIC,
-              subscriptionStatus: SubscriptionStatus.ACTIVE,
-              currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            },
-          });
+              planTier: isPro ? "PRO" : "BASIC",
+              subscriptionStatus: "ACTIVE",
+              currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
+              updatedAt: now,
+            })
+            .eq("id", companyId);
+
+          if (error) {
+            console.error("Erro ao atualizar Company no checkout.session.completed:", error.message);
+          }
         }
         break;
       }
 
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
-        const company = await prisma.company.findUnique({
-          where: { stripeSubscriptionId: subscription.id },
-        });
+        const priceId = subscription.items.data[0]?.price.id;
+        const isPro = priceId === process.env.STRIPE_PRICE_ID_PRO;
 
-        if (company) {
-          const priceId = subscription.items.data[0]?.price.id;
-          const isPro = priceId === process.env.STRIPE_PRICE_ID_PRO;
+        let status = "ACTIVE";
+        if (subscription.status === "past_due") status = "PAST_DUE";
+        if (subscription.status === "canceled") status = "CANCELED";
+        if (subscription.status === "unpaid") status = "UNPAID";
 
-          let status: SubscriptionStatus = SubscriptionStatus.ACTIVE;
-          if (subscription.status === "past_due") status = SubscriptionStatus.PAST_DUE;
-          if (subscription.status === "canceled") status = SubscriptionStatus.CANCELED;
-          if (subscription.status === "unpaid") status = SubscriptionStatus.UNPAID;
+        const { error } = await supabaseAdmin
+          .from("Company")
+          .update({
+            planTier: isPro ? "PRO" : "BASIC",
+            subscriptionStatus: status,
+            currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
+            updatedAt: now,
+          })
+          .eq("stripeSubscriptionId", subscription.id);
 
-          await prisma.company.update({
-            where: { id: company.id },
-            data: {
-              planTier: isPro ? PlanTier.PRO : PlanTier.BASIC,
-              subscriptionStatus: status,
-              currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            },
-          });
+        if (error) {
+          console.error("Erro ao atualizar Company no customer.subscription.updated:", error.message);
         }
         break;
       }
 
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        await prisma.company.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            planTier: PlanTier.BASIC,
-            subscriptionStatus: SubscriptionStatus.CANCELED,
-          },
-        });
+        const { error } = await supabaseAdmin
+          .from("Company")
+          .update({
+            planTier: "BASIC",
+            subscriptionStatus: "CANCELED",
+            updatedAt: now,
+          })
+          .eq("stripeSubscriptionId", subscription.id);
+
+        if (error) {
+          console.error("Erro ao cancelar Company no customer.subscription.deleted:", error.message);
+        }
         break;
       }
     }

@@ -17,6 +17,11 @@ function LoginForm() {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
+  // Modal de Recuperação de Senha
+  const [resetModalOpen, setResetModalOpen] = React.useState(false);
+  const [resetEmail, setResetEmail] = React.useState("");
+  const [resetLoading, setResetLoading] = React.useState(false);
+
   React.useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam === "auth_callback_failed") {
@@ -35,7 +40,7 @@ function LoginForm() {
       const supabase = createClient();
       const redirectUrl = `${window.location.origin}/auth/callback`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: redirectUrl,
@@ -73,7 +78,7 @@ function LoginForm() {
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password,
       });
@@ -100,6 +105,35 @@ function LoginForm() {
       console.error("Unexpected error:", err);
       setErrorMsg("Ocorreu um erro inesperado no login.");
       setLoading(false);
+    }
+  };
+
+  // Solicitar recuperação de senha real via Supabase Auth
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast.error("Por favor, digite seu e-mail cadastrado.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
+      });
+
+      if (error) {
+        toast.error("Erro ao solicitar redefinição: " + error.message);
+      } else {
+        toast.success("E-mail de recuperação enviado! Verifique sua caixa de entrada.");
+        setResetModalOpen(false);
+      }
+    } catch (err: any) {
+      console.error("Erro no reset de senha:", err);
+      toast.error("Ocorreu um erro ao processar a solicitação.");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -228,7 +262,10 @@ function LoginForm() {
             </label>
             <button
               type="button"
-              onClick={() => toast.info("Instruções de recuperação foram enviadas para o seu e-mail cadastrado.")}
+              onClick={() => {
+                setResetEmail(email.trim());
+                setResetModalOpen(true);
+              }}
               className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
               Esqueceu a senha?
@@ -301,6 +338,58 @@ function LoginForm() {
           Criar conta grátis
         </Link>
       </p>
+
+      {/* Modal de Recuperação de Senha */}
+      {resetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Recuperação de Senha
+              </h3>
+              <button
+                type="button"
+                onClick={() => setResetModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Digite seu e-mail cadastrado. Enviaremos um link seguro para você redefinir sua senha.
+            </p>
+
+            <form onSubmit={handleRequestPasswordReset} className="space-y-4">
+              <input
+                type="email"
+                placeholder="seu-email@dominio.com"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-2.5 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600"
+              />
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResetModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading || !resetEmail.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg shadow-xs"
+                >
+                  {resetLoading ? "Enviando..." : "Enviar Instruções"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

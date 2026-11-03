@@ -2,7 +2,7 @@
 // @saas/core - Barrel Export
 // ==========================================
 
-// 1. Banco de Dados e Prisma Client
+// 1. Banco de Dados e Clientes Supabase
 export * from "./db/client";
 
 // 2. Schemas de Validação (Zod)
@@ -19,6 +19,6 @@ export * from "./services/tenant.service";
 
 // 4. Integrações Externas
 export * from "./integrations/stripe";
-export * from "./integrations/r2";
+export * from "./integrations/storage";
 export * from "./integrations/brasil-api";
 export * from "./integrations/mail";

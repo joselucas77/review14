@@ -48,7 +48,7 @@ Se você quiser colocar essa descrição na raiz do seu repositório para orient
 * **Modelo de Negócio:** SaaS Multitenant B2B com cobrança recorrente (Tier Básico de entrada + Tier PRO com *upsell* por customização de formulários e CRM).
 * **Arquitetura de Código:** Monorepo gerenciado com `pnpm`, dividido em 3 aplicações Next.js (`apps/admin`, `apps/tenant`, `apps/client`), um pacote central de domínio compilado com `tsup` (`packages/core`) e uma biblioteca visual compartilhada na raiz (`/ui`).
 * **Stack Principal:** Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui e validação estrita de contratos com Zod.
-* **Banco de Dados e ORM:** PostgreSQL Serverless (Neon DB) modelado via Prisma ORM.
-* **Infraestrutura e Integrações:** Hospedagem na Vercel, armazenamento de fotos e vídeos de avaliações em nuvem via Cloudflare R2 (com *Presigned URLs*), faturamento automatizado via Stripe Webhooks e enriquecimento cadastral via Brasil API.
+* **Banco de Dados, Auth e Storage:** Supabase (PostgreSQL, Supabase Auth e Supabase Storage para fotos/vídeos).
+* **Infraestrutura e Integrações:** Hospedagem na Vercel, faturamento automatizado via Stripe Webhooks e enriquecimento cadastral via Brasil API.
 
 Qual nome você pensa em dar para a plataforma para já deixarmos os títulos e o `package.json` personalizados?
